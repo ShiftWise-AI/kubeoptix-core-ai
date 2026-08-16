@@ -1,97 +1,166 @@
 # kubeoptix-core-ai
 
-Agente local de análise de workloads OpenShift/Kubernetes. Lê metadados YAML
-coletados do cluster, aplica regras determinísticas e, opcionalmente, uma
-camada estatística / ML local para sinalizar perfis atípicos no namespace.
+Local OpenShift/Kubernetes workload assessment agent. Ingests YAML metadata
+collected from a cluster, applies deterministic rules, and optionally runs a
+local statistical / ML layer to flag atypical profiles within a namespace.
 
-## Requisitos
+Assessment output is a structured Markdown report (pt-BR) with findings,
+visualizations, recommendations, and explicit confidence levels per item.
+
+## Requirements
 
 - Python 3.11+
-- CPU only — sem GPU, sem LLM externo, sem APIs pagas, sem internet em runtime
+- CPU only — no GPU, no external LLM, no paid APIs, no network at runtime
 
-## Instalação
+## Installation
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-## Uso
+## Usage
 
 ```bash
-# Listar namespaces disponíveis
+# List available namespaces
 kubeoptix-core-ai list-namespaces
 
-# Diagnóstico de ingestão (sem findings operacionais)
-kubeoptix-core-ai diagnose --namespace meu-namespace-prd
+# Ingestion diagnostics (no operational findings)
+kubeoptix-core-ai diagnose --namespace my-namespace-prd
 
-# Análise completa (determinística + ML local)
-kubeoptix-core-ai analyze --namespace meu-namespace-prd
+# Full analysis (deterministic + local ML)
+kubeoptix-core-ai analyze --namespace my-namespace-prd
 
-# Apenas regras determinísticas
-kubeoptix-core-ai analyze --namespace meu-namespace-prd --no-ml
+# Deterministic rules only
+kubeoptix-core-ai analyze --namespace my-namespace-prd --no-ml
 
-# Seed reproduzível para K-Means e Isolation Forest
-kubeoptix-core-ai analyze --namespace meu-namespace-prd --ml-seed 42
+# Reproducible seed for K-Means and Isolation Forest
+kubeoptix-core-ai analyze --namespace my-namespace-prd --ml-seed 42
 
-# Saída JSON
-kubeoptix-core-ai analyze --namespace meu-namespace-prd --json
+# JSON output
+kubeoptix-core-ai analyze --namespace my-namespace-prd --json
 
-# Relatório Markdown de assessment
-kubeoptix-core-ai report --namespace meu-namespace-prd --output output/
+# Markdown assessment report
+kubeoptix-core-ai report --namespace my-namespace-prd --output output/
+
+# Batch: all namespaces under a metadata directory
+./run.sh /path/to/metadata /path/to/output
 ```
 
-### Variáveis de ambiente
+### Environment variables
 
-| Variável | Descrição |
-|----------|-----------|
-| `KUBEOPTIX_WORKLOADS_BASE` | Diretório base dos metadados de namespaces |
-| `KUBEOPTIX_WORKNODES_PATH` | Diretório dos YAMLs de worknodes |
-| `KUBEOPTIX_ML_ENABLED` | `true`/`false` — ativa camada ML (padrão: `true`) |
-| `KUBEOPTIX_ML_SEED` | Seed para algoritmos estocásticos (padrão: `42`) |
+| Variable | Description |
+|----------|-------------|
+| `KUBEOPTIX_WORKLOADS_BASE` | Base directory for namespace metadata |
+| `KUBEOPTIX_WORKNODES_PATH` | Directory of worknode YAML files |
+| `KUBEOPTIX_ML_ENABLED` | `true`/`false` — enable ML layer (default: `true`) |
+| `KUBEOPTIX_ML_SEED` | Random seed for stochastic algorithms (default: `42`) |
 
-## Arquitetura
+## Architecture
 
 ```
-YAML → parsers → modelos Pydantic
+YAML → parsers → Pydantic models
                     ↓
          ┌──────────┴──────────┐
          ↓                     ↓
-  Análise determinística   Camada ML local (opcional)
-  (regras absolutas)       (sinais estatísticos)
+  Deterministic analysis   Local ML layer (optional)
+  (absolute rules)         (statistical signals)
          └──────────┬──────────┘
                     ↓
               AnalysisReport
+                    ↓
+         Markdown report + visualizations
 ```
 
-A camada determinística trata fatos verificáveis (request ausente, usage > request,
-probes faltando). A camada ML complementa com comparações relativas dentro do
-namespace — **nunca substitui** regras simples quando estas são mais confiáveis.
+The deterministic layer handles verifiable facts (missing request, measured
+usage above request, missing probes). The ML layer adds relative comparisons
+within the namespace — it **never replaces** simple rules when those are more
+reliable.
 
-## Camada ML local
+## AI techniques
 
-Documentação detalhada em [`src/kubeoptix_core_ai/ml/README.md`](src/kubeoptix_core_ai/ml/README.md).
+> **Important:** this project does **not** use generative AI or external LLMs.
+> All “AI” runs locally on CPU, offline, on structured numeric features extracted
+> from ingested YAML and PodMetrics.
 
-| Técnica | Módulo | Problema que resolve |
-|---------|--------|----------------------|
-| z-score robusto / IQR | `ml/statistics.py` | Outliers univariados resistentes a valores extremos (mediana/MAD + Tukey) |
-| Distância euclidiana | `ml/comparison.py` | Workload mais distante do perfil típico; pares mais divergentes |
-| Isolation Forest | `ml/anomalies.py` | Anomalias multivariadas (combinação atípica de features) |
-| K-Means | `ml/clustering.py` | Grupos naturais de perfis para comparar right-sizing |
-| Similaridade de cosseno | `ml/similarity.py` | Pares com perfil numérico parecido para benchmarking interno |
+The optional ML layer (`src/kubeoptix_core_ai/ml/`) complements deterministic
+rules. It is disabled with `--no-ml` or `KUBEOPTIX_ML_ENABLED=false`.
 
-**Não implementado (avaliado e descartado):** embeddings textuais, TF-IDF sobre
-YAML, pandas — features estruturadas numéricas são suficientes e mais confiáveis
-para right-sizing.
+| Technique | Module | Purpose |
+|-----------|--------|---------|
+| Robust z-score (median/MAD) and IQR | `ml/statistics.py` | Univariate outliers resistant to extremes (Tukey fences) |
+| Euclidean distance to centroid | `ml/comparison.py` | Workloads farthest from the namespace profile; divergent pairs |
+| Isolation Forest | `ml/anomalies.py` | Multivariate anomalies (unusual feature combinations) |
+| K-Means | `ml/clustering.py` | Natural resource-profile groups for right-sizing comparison |
+| Cosine similarity | `ml/similarity.py` | Similar numeric profiles for in-namespace benchmarking |
 
-Findings ML usam IDs `ML-<CATEGORIA>-NNN`, severidade INFO/LOW e a limitação
-padrão de que outlier estatístico ≠ defeito operacional.
+**Feature vector:** each workload is encoded as a fixed 14-dimensional vector
+(requests, limits, replicas, probes, scheduling flags, usage/request ratios when
+PodMetrics exist). See `FEATURE_NAMES` in `ml/features.py`.
 
-## Testes
+**Execution order:** statistics → comparison → anomalies → clustering →
+similarity.
+
+**Explicitly not used** (evaluated and rejected for this use case):
+
+- Text embeddings and semantic similarity over YAML
+- TF-IDF on manifest text
+- pandas (namespace-scale data fits lists/NumPy)
+- External model APIs or cloud inference
+
+ML findings use IDs `ML-<CATEGORY>-NNN`, categories `MLSTAT`, `MLCOMP`,
+`MLANOM`, `MLCLUST`, `MLSIM`, and are tagged with the standard limitation:
+*statistical outlier ≠ operational defect*.
+
+Further detail: [`src/kubeoptix_core_ai/ml/README.md`](src/kubeoptix_core_ai/ml/README.md).
+
+## Report confidence model
+
+Every finding in the assessment report carries a **confidence** grade. The report
+as a whole is designed so readers can separate **evidence**, **analysis**,
+**recommendation**, and **limitations** — and judge how much to trust each item.
+
+### Per-finding confidence
+
+| Level | Meaning | Typical source |
+|-------|---------|----------------|
+| **HIGH** | Direct evidence in ingested artifacts (Deployment YAML, Pod status, PodMetrics snapshot) | Deterministic rules: missing probes, request/limit values, usage vs request in a single metrics snapshot |
+| **MEDIUM** | Supported inference with partial or contextual data | Scheduling heuristics, inventory checks, ML statistics/comparison/anomaly signals |
+| **LOW** | Hypothesis with limited evidence | Some clustering outliers, sparse namespace comparisons |
+
+Deterministic findings (`RES-<CATEGORY>-NNN`) usually score **HIGH** when the
+checked field is present in collected YAML or metrics. ML findings (`ML-*`) are
+capped at **MEDIUM** or **LOW** and use lower severities (INFO/LOW) by design.
+
+### What the report guarantees
+
+- **Traceability:** findings link to source files and field paths when available.
+- **No invented data:** missing metrics, events, or secrets content are stated
+  explicitly in limitations (§21) rather than inferred.
+- **Terminology discipline:** configured *request/limit* is never labeled as
+  measured *usage*; PodMetrics usage is labeled as a point-in-time snapshot.
+- **Actionable vs exploratory:** recommendations in §19 link back to detailed
+  findings; ML signals in §16 are indexed as investigation hints, not confirmed
+  defects.
+
+### Overall trust boundaries
+
+The produced report is **high confidence for configuration facts** present in
+the dump, and **moderate confidence for sizing and optimization advice** that
+depends on a single PodMetrics snapshot without historical series. Validation
+with 7–30 days of metrics before production changes is recommended in the
+report conclusion when runtime data exists.
+
+Disable the ML layer (`--no-ml`) for a **fully rule-based report** with the
+highest per-item confidence — at the cost of missing relative/statistical signals
+within the namespace.
+
+## Tests
 
 ```bash
 pytest
 ```
 
-## Especificação do agente
+## Agent specification
 
-Metodologia e formato de relatório em [`kubeoptix-core-ai-agent-spec/`](kubeoptix-core-ai-agent-spec/).
+Methodology and report format:
+[`kubeoptix-core-ai-agent-spec/`](kubeoptix-core-ai-agent-spec/).
