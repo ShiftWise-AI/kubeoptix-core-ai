@@ -78,7 +78,10 @@ src/kubeoptix_core_ai/report/__init__.py
 src/kubeoptix_core_ai/report/markdown.py
 src/kubeoptix_core_ai/report/pipeline.py
 src/kubeoptix_core_ai/visualization/__init__.py
+src/kubeoptix_core_ai/visualization/bar_chart.py
 src/kubeoptix_core_ai/visualization/builders.py
+src/kubeoptix_core_ai/visualization/chart_theme.py
+src/kubeoptix_core_ai/visualization/doughnut_chart.py
 src/kubeoptix_core_ai/visualization/interpretation.py
 src/kubeoptix_core_ai/visualization/markdown.py
 src/kubeoptix_core_ai/visualization/models.py
@@ -101,6 +104,7 @@ tests/test_analysis_engine.py
 tests/test_analysis_memory.py
 tests/test_analysis_probes.py
 tests/test_analysis_scoring.py
+tests/test_api.py
 tests/test_config.py
 tests/test_diagnostic_aggregator.py
 tests/test_diagnostic_runner.py
@@ -109,6 +113,7 @@ tests/test_inventory.py
 tests/test_loaders.py
 tests/test_ml_engine.py
 tests/test_ml_statistics.py
+tests/test_parsers_base.py
 tests/test_parsers_deployment.py
 tests/test_parsers_inventory.py
 tests/test_parsers_node.py
@@ -116,7 +121,9 @@ tests/test_parsers_pod_metrics.py
 tests/test_qos.py
 tests/test_quantities.py
 tests/test_report_markdown.py
+tests/test_visualization_bar.py
 tests/test_visualization_communication.py
+tests/test_visualization_doughnut.py
 tests/test_visualization_integration.py
 tests/test_visualization_mermaid.py
 tests/test_visualization_sanitize.py
