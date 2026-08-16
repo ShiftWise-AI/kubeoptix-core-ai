@@ -56,6 +56,7 @@ class ChartDataset(BaseModel):
     x_labels: tuple[str, ...]
     series: tuple[ChartSeries, ...]
     y_axis_label: str
+    x_axis_label: str = "Categoria"
     y_max: float | None = None
 
 
@@ -68,7 +69,7 @@ class PieSlice(BaseModel):
 
 
 class CompositionDataset(BaseModel):
-    """Dataset para gráficos de composição (pie)."""
+    """Dataset para gráficos de composição (Doughnut Chart)."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -124,6 +125,7 @@ class VisualizationSpec(BaseModel):
     section: str
     status: VisualizationStatus
     mermaid: str | None = None
+    html: str | None = None
     interpretation: str = ""
     unavailable_reason: str | None = None
     provenance: tuple[ProvenanceRef, ...] = ()

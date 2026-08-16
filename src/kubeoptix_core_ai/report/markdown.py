@@ -36,6 +36,9 @@ from kubeoptix_core_ai.report.pipeline import AssessmentBundle
 from kubeoptix_core_ai.visualization.markdown import render_section_visualizations
 from kubeoptix_core_ai.visualization.pipeline import VisualizationPipeline
 
+REPORT_FILE_ENCODING = "utf-8"
+REPORT_FILE_LANGUAGE = "pt-BR"
+
 _ML_CATEGORIES = frozenset({"MLSTAT", "MLCOMP", "MLANOM", "MLCLUST", "MLSIM"})
 _SECTION_CATEGORIES: dict[str, tuple[str, ...]] = {
     "cpu": ("CPU", "RES"),
@@ -49,6 +52,158 @@ _SECTION_CATEGORIES: dict[str, tuple[str, ...]] = {
     "inventory": ("ROUTE", "CONFIG", "LOG", "OPER"),
     "anomalies": tuple(_ML_CATEGORIES),
 }
+
+_FINDING_CATEGORY_LEGEND: tuple[tuple[str, str], ...] = (
+    ("CPU", "Dimensionamento e uso de CPU"),
+    ("MEM", "Dimensionamento e uso de memória"),
+    ("RES", "Recursos declarados (request/limit gerais)"),
+    ("QOS", "Quality of Service — classes Guaranteed, Burstable e BestEffort"),
+    ("REPLICA", "Réplicas, HPA e disponibilidade"),
+    ("PROBE", "Liveness, readiness e startup probes"),
+    ("SCHED", "Scheduling, affinity e distribuição de pods"),
+    ("STORAGE", "Volumes persistentes e PVCs"),
+    ("WNODE", "Correlação workload × worknode"),
+    ("ROUTE", "Routes e exposição HTTP/TLS"),
+    ("CONFIG", "ConfigMaps e configuração"),
+    ("LOG", "Logs coletados dos pods"),
+    ("OPER", "Operadores (OLM/CSV)"),
+    ("MLSTAT", "Sinais estatísticos locais"),
+    ("MLCOMP", "Comparação estatística entre workloads"),
+    ("MLANOM", "Detecção de anomalias estatísticas"),
+    ("MLCLUST", "Agrupamento (clustering) de workloads"),
+    ("MLSIM", "Similaridade entre workloads"),
+)
+
+_SEVERITY_LEGEND: tuple[tuple[str, str], ...] = (
+    ("CRITICAL", "Risco imediato ou impacto operacional grave"),
+    ("HIGH", "Problema significativo que requer atenção prioritária"),
+    ("MEDIUM", "Desvio relevante; planejar correção"),
+    ("LOW", "Oportunidade de melhoria ou risco residual baixo"),
+    ("INFO", "Informativo; sem ação obrigatória"),
+)
+
+_CONFIDENCE_LEGEND: tuple[tuple[str, str], ...] = (
+    ("HIGH", "Evidência direta nos artefatos coletados"),
+    ("MEDIUM", "Inferência com suporte parcial nos dados"),
+    ("LOW", "Hipótese com evidência limitada"),
+)
+
+_TECHNICAL_ACRONYMS: tuple[tuple[str, str], ...] = (
+    ("HPA", "Horizontal Pod Autoscaler"),
+    ("QoS", "Quality of Service — classe de garantia de recursos do pod"),
+    ("PVC", "PersistentVolumeClaim"),
+    ("TLS", "Transport Layer Security"),
+    ("RES-*", "Prefixo dos IDs de findings determinísticos (ex.: `RES-CPU-001`)"),
+    ("ML-*", "Prefixo dos IDs de findings da camada estatística (ex.: `ML-MLANOM-001`)"),
+    ("PodMetrics", "Métricas de runtime coletadas via API `metrics.k8s.io`"),
+)
+
+_REDHAT_TECHNICAL_DOCUMENTATION: tuple[tuple[str, str, str], ...] = (
+    (
+        "Visão geral de workloads",
+        "Red Hat OpenShift — Gerenciamento de workloads",
+        "https://docs.openshift.com/container-platform/latest/nodes/pods/nodes-pods-resource-limits.html",
+    ),
+    (
+        "CPU e memória (requests/limits)",
+        "Red Hat OpenShift — Recursos de computação para scheduling",
+        "https://docs.openshift.com/container-platform/latest/nodes/scheduling/nodes-scheduler-compute-resources.html",
+    ),
+    (
+        "QoS e overcommit",
+        "Red Hat OpenShift — Overcommit de recursos no cluster",
+        "https://docs.openshift.com/container-platform/latest/nodes/clusters/nodes-cluster-overcommit.html",
+    ),
+    (
+        "Probes (liveness, readiness, startup)",
+        "Red Hat OpenShift — Monitoramento de saúde de aplicações",
+        "https://docs.openshift.com/container-platform/latest/applications/application-health.html",
+    ),
+    (
+        "Scheduling e placement",
+        "Red Hat OpenShift — Sobre o scheduler de Pods",
+        "https://docs.openshift.com/container-platform/latest/nodes/scheduling/nodes-scheduler-about.html",
+    ),
+    (
+        "HPA e réplicas",
+        "Red Hat OpenShift — Autoscaling de Pods",
+        "https://docs.openshift.com/container-platform/latest/nodes/pods/nodes-pods-autoscaling.html",
+    ),
+    (
+        "Monitoramento e métricas",
+        "Red Hat OpenShift — Visão geral de monitoramento",
+        "https://docs.openshift.com/container-platform/latest/monitoring/monitoring-overview.html",
+    ),
+    (
+        "Storage e PVCs",
+        "Red Hat OpenShift — Armazenamento persistente",
+        "https://docs.openshift.com/container-platform/latest/storage/understanding-persistent-storage.html",
+    ),
+    (
+        "Routes e TLS",
+        "Red Hat OpenShift — Configuração de Routes",
+        "https://docs.openshift.com/container-platform/latest/networking/routes/route-configuration.html",
+    ),
+    (
+        "Operadores (OLM)",
+        "Red Hat OpenShift — Operator Lifecycle Manager (OLM)",
+        "https://docs.openshift.com/container-platform/latest/operators/understanding/olm-understanding-olm.html",
+    ),
+    (
+        "ConfigMaps",
+        "Red Hat OpenShift — ConfigMaps em aplicações",
+        "https://docs.openshift.com/container-platform/latest/builds/building-applications.html#builds-buildconfig-maps_building-applications",
+    ),
+)
+
+_SUPPLEMENTARY_TECHNICAL_DOCUMENTATION: tuple[tuple[str, str, str], ...] = (
+    (
+        "Métricas de runtime (PodMetrics)",
+        "Kubernetes — Pipeline de métricas de recursos",
+        "https://kubernetes.io/docs/tasks/debug/debug-cluster/resource-metrics-pipeline/",
+    ),
+    (
+        "Referência upstream de recursos",
+        "Kubernetes — Gerenciamento de recursos de Pods e containers",
+        "https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/",
+    ),
+)
+
+_REDHAT_BIBLIOGRAPHIC_REFERENCES: tuple[tuple[str, str], ...] = (
+    (
+        "Red Hat, Inc. *Red Hat OpenShift Container Platform — "
+        "Documentação oficial.* docs.openshift.com.",
+        "Referência primária para operação, networking, operadores e workloads.",
+    ),
+    (
+        "Duncan, C.; Mier, T.; Brindley, A. *OpenShift for Developers.* "
+        "O'Reilly Media, 2ª ed., 2021.",
+        "Desenvolvimento e operação de aplicações em OpenShift.",
+    ),
+    (
+        "Ibsen, R.; Schimanski, M. *Kubernetes Patterns.* "
+        "O'Reilly Media, 2ª ed., 2020.",
+        "Padrões de design para workloads em plataformas Kubernetes/OpenShift.",
+    ),
+    (
+        "Red Hat, Inc. *OpenShift Container Platform — "
+        "Scalability and Performance Guide.* docs.openshift.com.",
+        "Dimensionamento de recursos, réplicas e capacidade de cluster.",
+    ),
+)
+
+_SUPPLEMENTARY_BIBLIOGRAPHIC_REFERENCES: tuple[tuple[str, str], ...] = (
+    (
+        "Beyer, B. et al. *Site Reliability Engineering: How Google Runs "
+        "Production Systems.* O'Reilly Media, 2016.",
+        "Práticas complementares de confiabilidade e observabilidade.",
+    ),
+    (
+        "Burns, B.; Grant, B.; Oppenheimer, D.; Brewer, E.; Wilkes, J. "
+        "*Borg, Omega, and Kubernetes.* ACM Queue, 14(1), 2016.",
+        "Contexto histórico de orquestração em larga escala.",
+    ),
+)
 
 
 def _relative_path(path: str, base: Path) -> str:
@@ -422,7 +577,7 @@ def _findings_index_table(findings: tuple[Finding, ...]) -> str:
             summary = summary[:117] + "..."
         rows.append(
             (
-                f"`{finding.id}`",
+                _finding_link(finding.id),
                 finding.severity.value,
                 finding.category,
                 finding.workload or "—",
@@ -478,7 +633,7 @@ def _action_plan_table(findings: tuple[Finding, ...]) -> str:
             (
                 _severity_priority(finding.severity),
                 finding.recommendation or "—",
-                f"`{finding.id}`",
+                _finding_link(finding.id),
                 _acceptance_criterion(finding),
             )
         )
@@ -496,12 +651,26 @@ def _findings_by_categories(
     return tuple(f for f in findings if f.category in cat_set)
 
 
+def _finding_anchor_id(finding_id: str) -> str:
+    return finding_id.lower()
+
+
+def _finding_link(finding_id: str) -> str:
+    anchor = _finding_anchor_id(finding_id)
+    return f"[`{finding_id}`](#{anchor})"
+
+
+def _format_finding_with_anchor(finding: Finding) -> str:
+    anchor = _finding_anchor_id(finding.id)
+    return f'<a id="{anchor}"></a>\n{format_finding(finding)}'
+
+
 def _section_findings(findings: tuple[Finding, ...], intro: str) -> str:
     if not findings:
         return f"{intro}\n\n_Nenhum finding nesta categoria._\n"
     parts = [intro, ""]
     for finding in findings:
-        parts.append(format_finding(finding))
+        parts.append(_format_finding_with_anchor(finding))
         parts.append("")
     return "\n".join(parts)
 
@@ -699,7 +868,7 @@ def _recommendations_list(findings: tuple[Finding, ...]) -> str:
         if key in seen:
             continue
         seen.add(key)
-        recs.append(f"- {key} (`{finding.id}`)")
+        recs.append(f"- {key} ({_finding_link(finding.id)})")
     if not recs:
         return "_Nenhuma recomendação específica gerada._\n"
     return "\n".join(recs) + "\n"
@@ -717,7 +886,7 @@ def _risks_list(findings: tuple[Finding, ...]) -> str:
     for finding in risky:
         impact = finding.impact or "Impacto não detalhado no finding."
         lines.append(
-            f"- **{finding.id}** [{finding.severity.value}] — "
+            f"- {_finding_link(finding.id)} [{finding.severity.value}] — "
             f"{finding.analysis} *Impacto:* {impact}"
         )
     return "\n".join(lines) + "\n"
@@ -740,7 +909,7 @@ def _opportunities_list(findings: tuple[Finding, ...]) -> str:
         if key in seen:
             continue
         seen.add(key)
-        lines.append(f"- {finding.recommendation} (`{finding.id}`)")
+        lines.append(f"- {finding.recommendation} ({_finding_link(finding.id)})")
     return "\n".join(lines) + "\n"
 
 
@@ -866,6 +1035,68 @@ def _referenced_configmap_names(workloads: tuple[Workload, ...]) -> set[str]:
     return refs
 
 
+def _acronyms_legend() -> str:
+    parts = [
+        "Glossário das siglas e abreviações utilizadas neste relatório.\n",
+        "### Categorias de findings\n",
+        _md_table(("Sigla", "Descrição"), list(_FINDING_CATEGORY_LEGEND)),
+        "### Níveis de severidade\n",
+        _md_table(("Sigla", "Descrição"), list(_SEVERITY_LEGEND)),
+        "### Níveis de confiança\n",
+        _md_table(("Sigla", "Descrição"), list(_CONFIDENCE_LEGEND)),
+        "### Termos técnicos\n",
+        _md_table(("Sigla", "Descrição"), list(_TECHNICAL_ACRONYMS)),
+    ]
+    return "\n".join(parts)
+
+
+def _references_section() -> str:
+    redhat_tech_rows = [
+        (topic, f"[{title}]({url})")
+        for topic, title, url in _REDHAT_TECHNICAL_DOCUMENTATION
+    ]
+    supplementary_tech_rows = [
+        (topic, f"[{title}]({url})")
+        for topic, title, url in _SUPPLEMENTARY_TECHNICAL_DOCUMENTATION
+    ]
+    parts = [
+        "Fontes consultadas para fundamentar metodologia, terminologia e "
+        "recomendações deste relatório. **Prioridade:** documentação e "
+        "publicações Red Hat; referências upstream complementam quando "
+        "não há equivalente específico em OpenShift.\n",
+        "### Documentação técnica — Red Hat\n",
+        _md_table(("Tema", "Referência"), redhat_tech_rows),
+        "### Documentação técnica complementar (upstream)\n",
+        _md_table(("Tema", "Referência"), supplementary_tech_rows),
+        "### Referências bibliográficas — Red Hat\n",
+        _md_table(("Referência", "Relevância"), list(_REDHAT_BIBLIOGRAPHIC_REFERENCES)),
+        "### Referências bibliográficas complementares\n",
+        _md_table(
+            ("Referência", "Relevância"),
+            list(_SUPPLEMENTARY_BIBLIOGRAPHIC_REFERENCES),
+        ),
+    ]
+    return "\n".join(parts)
+
+
+def _build_report_frontmatter(namespace: str) -> str:
+    """Metadados YAML para conversores (Pandoc, etc.) reconhecerem pt-BR e UTF-8."""
+    title = f"Relatório de Assessment — Namespace {namespace}"
+    return (
+        "---\n"
+        f"title: \"{title}\"\n"
+        f"lang: {REPORT_FILE_LANGUAGE}\n"
+        "babel-lang: brazil\n"
+        "dir: ltr\n"
+        "---\n"
+    )
+
+
+def _prepare_report_content(content: str) -> str:
+    """Normaliza quebras de linha e garante texto Unicode válido para UTF-8."""
+    return content.replace("\r\n", "\n").replace("\r", "\n")
+
+
 class MarkdownReportGenerator:
     """Monta relatório Markdown completo a partir de um ``AssessmentBundle``."""
 
@@ -878,6 +1109,7 @@ class MarkdownReportGenerator:
         generated = bundle.generated_at.strftime("%d/%m/%Y %H:%M UTC")
 
         sections: list[str] = [
+            _build_report_frontmatter(ns),
             f"# Relatório de Assessment — Namespace `{ns}`",
             "",
             f"**Namespace analisado:** `{ns}`",
@@ -894,16 +1126,19 @@ class MarkdownReportGenerator:
             "",
             "---",
             "",
-            "## 1. Sumário executivo",
+            "## 1. Legenda de siglas",
             "",
         ]
+        sections.append(_acronyms_legend())
+
+        sections.extend(["", "---", "", "## 2. Sumário executivo", ""])
 
         for line in _executive_narrative(report, bundle):
             sections.append(line)
         sections.append("")
         sections.append(_workloads_summary_table(ctx.workloads))
 
-        sections.extend(["", "---", "", "## 2. Escopo da análise", ""])
+        sections.extend(["", "---", "", "## 3. Escopo da análise", ""])
         sections.append(
             f"- **Workloads analisados:** {report.workloads_analyzed}\n"
             f"- **Worknodes considerados:** {report.worknodes_considered}\n"
@@ -913,7 +1148,7 @@ class MarkdownReportGenerator:
             f"- **Erros de parsing:** {len(diag.parse_errors)}\n"
             f"- **Camada ML local:** {'ativada' if report.ml_enabled else 'desativada'}"
         )
-        sections.extend(["", "---", "", "## 3. Fontes de dados", ""])
+        sections.extend(["", "---", "", "## 4. Fontes de dados", ""])
         sections.append(
             "Tipos de artefato considerados nesta execução:\n\n"
             "- Deployments (`apps/*/deployments/*.yaml`)\n"
@@ -938,14 +1173,14 @@ class MarkdownReportGenerator:
             if len(diag.processed_files) > 20:
                 sections.append(f"- _… e mais {len(diag.processed_files) - 20} arquivo(s)_")
 
-        sections.extend(["", "---", "", "## 4. Visão geral do namespace", ""])
+        sections.extend(["", "---", "", "## 5. Visão geral do namespace", ""])
         sections.append(_namespace_totals_table(bundle))
         sections.append("\n### Comparativo request / limit / uso (snapshot)\n")
         sections.append(_resource_balance_table(bundle))
         sections.append("\n### Visualizações\n")
         sections.append(render_section_visualizations(visualizations.by_section("namespace_overview")))
 
-        sections.extend(["", "---", "", "## 5. Workloads identificados", ""])
+        sections.extend(["", "---", "", "## 6. Workloads identificados", ""])
 
         if ctx.services:
             sections.append("### Inventário — Services\n")
@@ -999,7 +1234,7 @@ class MarkdownReportGenerator:
         sections.append("\n### Visualizações\n")
         sections.append(render_section_visualizations(visualizations.by_section("workloads")))
 
-        sections.extend(["", "---", "", "## 6. Análise de CPU", ""])
+        sections.extend(["", "---", "", "## 7. Análise de CPU", ""])
         sections.append("### Configuração (request/limit)\n")
         sections.append(
             "Valores de **request** e **limit** abaixo são configurados nos "
@@ -1032,7 +1267,7 @@ class MarkdownReportGenerator:
             )
         )
 
-        sections.extend(["", "---", "", "## 7. Análise de memória", ""])
+        sections.extend(["", "---", "", "## 8. Análise de memória", ""])
         mem_rows: list[tuple[str, ...]] = []
         for wl in ctx.workloads:
             mem_rows.append(
@@ -1059,11 +1294,11 @@ class MarkdownReportGenerator:
         )
 
         for title, key in (
-            ("## 8. Análise de QoS", "qos"),
-            ("## 9. Análise de réplicas", "replicas"),
-            ("## 10. Análise de probes", "probes"),
-            ("## 11. Análise de scheduling", "scheduling"),
-            ("## 12. Análise de storage", "storage"),
+            ("## 9. Análise de QoS", "qos"),
+            ("## 10. Análise de réplicas", "replicas"),
+            ("## 11. Análise de probes", "probes"),
+            ("## 12. Análise de scheduling", "scheduling"),
+            ("## 13. Análise de storage", "storage"),
         ):
             sections.extend(["", "---", "", title, ""])
             if key == "qos":
@@ -1076,7 +1311,7 @@ class MarkdownReportGenerator:
                 )
             )
 
-        sections.extend(["", "---", "", "## 13. Correlação workload × worknode", ""])
+        sections.extend(["", "---", "", "## 14. Correlação workload × worknode", ""])
         sections.append(_placement_table(ctx.workloads, ctx.nodes))
         sections.append("\n### Visualizações\n")
         sections.append(render_section_visualizations(visualizations.by_section("workload_node")))
@@ -1089,7 +1324,7 @@ class MarkdownReportGenerator:
             )
         )
 
-        sections.extend(["", "---", "", "## 14. Anomalias identificadas", ""])
+        sections.extend(["", "---", "", "## 15. Anomalias identificadas", ""])
         if report.ml_enabled:
             sections.append(
                 "Sinais da camada estatística/ML local. Outlier estatístico "
@@ -1106,32 +1341,32 @@ class MarkdownReportGenerator:
         else:
             sections.append("_Camada ML local desativada nesta execução._\n")
 
-        sections.extend(["", "---", "", "## 15. Findings", ""])
+        sections.extend(["", "---", "", "## 16. Findings", ""])
         sections.append(
             f"Total: **{report.finding_count}** findings. "
-            "Detalhes completos nas seções analíticas (6–14); "
+            "Detalhes completos nas seções analíticas (7–15); "
             "índice resumido abaixo.\n"
         )
         sections.append(_findings_index_table(report.findings))
         sections.append("\n### Visualizações\n")
         sections.append(render_section_visualizations(visualizations.by_section("findings")))
 
-        sections.extend(["", "---", "", "## 16. Oportunidades de otimização", ""])
+        sections.extend(["", "---", "", "## 17. Oportunidades de otimização", ""])
         sections.append(_opportunities_list(report.findings))
 
-        sections.extend(["", "---", "", "## 17. Riscos", ""])
+        sections.extend(["", "---", "", "## 18. Riscos", ""])
         sections.append(_risks_list(report.findings))
 
-        sections.extend(["", "---", "", "## 18. Recomendações", ""])
+        sections.extend(["", "---", "", "## 19. Recomendações", ""])
         sections.append("### Plano de ação\n")
         sections.append(_action_plan_table(report.findings))
         sections.append("\n### Lista consolidada\n")
         sections.append(_recommendations_list(report.findings))
 
-        sections.extend(["", "---", "", "## 19. Conclusão", ""])
+        sections.extend(["", "---", "", "## 20. Conclusão", ""])
         sections.append(_conclusion_text(report, bundle))
 
-        sections.extend(["", "---", "", "## 20. Limitações da análise", ""])
+        sections.extend(["", "---", "", "## 21. Limitações da análise", ""])
         if report.limitations:
             for lim in report.limitations:
                 sections.append(f"- {lim}")
@@ -1143,16 +1378,19 @@ class MarkdownReportGenerator:
             "explicitamente presentes nos artefatos ingeridos."
         )
 
-        return "\n".join(sections) + "\n"
+        sections.extend(["", "---", "", "## 22. Referências", ""])
+        sections.append(_references_section())
+
+        return _prepare_report_content("\n".join(sections) + "\n")
 
 
 def write_assessment_report(
     bundle: AssessmentBundle,
     output_dir: Path,
 ) -> Path:
-    """Gera `<namespace>.md` no diretório de saída."""
+    """Gera `<namespace>.md` no diretório de saída (UTF-8, pt-BR)."""
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"{bundle.analysis.namespace}.md"
     content = MarkdownReportGenerator().generate(bundle)
-    path.write_text(content, encoding="utf-8")
+    path.write_bytes(content.encode(REPORT_FILE_ENCODING))
     return path

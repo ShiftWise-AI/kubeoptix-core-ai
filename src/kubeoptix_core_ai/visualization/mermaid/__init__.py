@@ -2,14 +2,9 @@
 
 from __future__ import annotations
 
-from kubeoptix_core_ai.visualization.mermaid.composition import render_pie_chart
 from kubeoptix_core_ai.visualization.mermaid.flowchart import render_flowchart
 from kubeoptix_core_ai.visualization.mermaid.numeric import render_xy_chart
-from kubeoptix_core_ai.visualization.models import (
-    ChartDataset,
-    CompositionDataset,
-    FlowchartDataset,
-)
+from kubeoptix_core_ai.visualization.models import ChartDataset, FlowchartDataset
 
 
 class MermaidGenerator:
@@ -17,9 +12,6 @@ class MermaidGenerator:
 
     def render_numeric(self, dataset: ChartDataset) -> str:
         return render_xy_chart(dataset)
-
-    def render_composition(self, dataset: CompositionDataset) -> str:
-        return render_pie_chart(dataset)
 
     def render_flowchart(self, dataset: FlowchartDataset) -> str:
         return render_flowchart(dataset)
