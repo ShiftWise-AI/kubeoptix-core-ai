@@ -8,7 +8,12 @@ from pathlib import Path
 import pytest
 
 from kubeoptix_core_ai.config import AnalyzerConfig
-from kubeoptix_core_ai.report.markdown import MarkdownReportGenerator, write_assessment_report
+from kubeoptix_core_ai.report.markdown import (
+    REPORT_FILE_ENCODING,
+    REPORT_FILE_LANGUAGE,
+    MarkdownReportGenerator,
+    write_assessment_report,
+)
 from kubeoptix_core_ai.report.pipeline import AssessmentPipeline
 
 from tests.conftest import EXAMPLE_NAMESPACE
@@ -48,6 +53,9 @@ def test_markdown_report_structure(analysis_tree: Path, tmp_path: Path) -> None:
     bundle = AssessmentPipeline(config).run(EXAMPLE_NAMESPACE)
     md = MarkdownReportGenerator().generate(bundle)
 
+    assert md.startswith("---\n")
+    assert f"lang: {REPORT_FILE_LANGUAGE}\n" in md
+    assert "babel-lang: brazil\n" in md
     assert "# Relatório de Assessment" in md
     assert "## 1. Sumário executivo" in md
     assert "## 20. Limitações da análise" in md
@@ -105,7 +113,30 @@ def test_write_assessment_report_filename(analysis_tree: Path, tmp_path: Path) -
 
     assert path == out / f"{EXAMPLE_NAMESPACE}.md"
     assert path.is_file()
-    assert path.read_text(encoding="utf-8").startswith("# Relatório de Assessment")
+    raw = path.read_bytes()
+    content = raw.decode("utf-8")
+    assert content.startswith("---\n")
+    assert f"lang: {REPORT_FILE_LANGUAGE}\n" in content
+    assert "# Relatório de Assessment" in content
+    assert "Relatório" in content
+    assert "Análise" in content or "análise" in content.lower()
+
+
+def test_write_assessment_report_utf8_encoding(analysis_tree: Path, tmp_path: Path) -> None:
+    assert REPORT_FILE_ENCODING == "utf-8"
+    assert REPORT_FILE_LANGUAGE == "pt-BR"
+
+    config = AnalyzerConfig(
+        workloads_base=analysis_tree,
+        worknodes_path=tmp_path / "worknodes",
+    )
+    bundle = AssessmentPipeline(config).run(EXAMPLE_NAMESPACE)
+    path = write_assessment_report(bundle, tmp_path / "out")
+
+    raw = path.read_bytes()
+    assert raw.decode("utf-8")  # levanta UnicodeDecodeError se não for UTF-8
+    assert not raw.startswith(b"\xff\xfe")
+    assert not raw.startswith(b"\xfe\xff")
 
 
 def test_conclusion_derives_priorities_from_findings_not_hardcoded(

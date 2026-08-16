@@ -36,6 +36,9 @@ from kubeoptix_core_ai.report.pipeline import AssessmentBundle
 from kubeoptix_core_ai.visualization.markdown import render_section_visualizations
 from kubeoptix_core_ai.visualization.pipeline import VisualizationPipeline
 
+REPORT_FILE_ENCODING = "utf-8"
+REPORT_FILE_LANGUAGE = "pt-BR"
+
 _ML_CATEGORIES = frozenset({"MLSTAT", "MLCOMP", "MLANOM", "MLCLUST", "MLSIM"})
 _SECTION_CATEGORIES: dict[str, tuple[str, ...]] = {
     "cpu": ("CPU", "RES"),
@@ -866,6 +869,24 @@ def _referenced_configmap_names(workloads: tuple[Workload, ...]) -> set[str]:
     return refs
 
 
+def _build_report_frontmatter(namespace: str) -> str:
+    """Metadados YAML para conversores (Pandoc, etc.) reconhecerem pt-BR e UTF-8."""
+    title = f"Relatório de Assessment — Namespace {namespace}"
+    return (
+        "---\n"
+        f"title: \"{title}\"\n"
+        f"lang: {REPORT_FILE_LANGUAGE}\n"
+        "babel-lang: brazil\n"
+        "dir: ltr\n"
+        "---\n"
+    )
+
+
+def _prepare_report_content(content: str) -> str:
+    """Normaliza quebras de linha e garante texto Unicode válido para UTF-8."""
+    return content.replace("\r\n", "\n").replace("\r", "\n")
+
+
 class MarkdownReportGenerator:
     """Monta relatório Markdown completo a partir de um ``AssessmentBundle``."""
 
@@ -878,6 +899,7 @@ class MarkdownReportGenerator:
         generated = bundle.generated_at.strftime("%d/%m/%Y %H:%M UTC")
 
         sections: list[str] = [
+            _build_report_frontmatter(ns),
             f"# Relatório de Assessment — Namespace `{ns}`",
             "",
             f"**Namespace analisado:** `{ns}`",
@@ -1143,16 +1165,16 @@ class MarkdownReportGenerator:
             "explicitamente presentes nos artefatos ingeridos."
         )
 
-        return "\n".join(sections) + "\n"
+        return _prepare_report_content("\n".join(sections) + "\n")
 
 
 def write_assessment_report(
     bundle: AssessmentBundle,
     output_dir: Path,
 ) -> Path:
-    """Gera `<namespace>.md` no diretório de saída."""
+    """Gera `<namespace>.md` no diretório de saída (UTF-8, pt-BR)."""
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / f"{bundle.analysis.namespace}.md"
     content = MarkdownReportGenerator().generate(bundle)
-    path.write_text(content, encoding="utf-8")
+    path.write_bytes(content.encode(REPORT_FILE_ENCODING))
     return path

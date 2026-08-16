@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,24 @@ from kubeoptix_core_ai.errors import ParseError
 from kubeoptix_core_ai.logging import get_logger
 
 logger = get_logger("parsers.base")
+
+# Valores sanitizados como ``[TOKEN_REMOVIDO].io`` quebram o parser YAML
+# (colchetes são interpretados como flow sequence).
+_BRACKET_SCALAR_RE = re.compile(
+    r"^(\s+)(\w+): (\[[^\]]+\]\S.*)$",
+    re.MULTILINE,
+)
+
+
+def _sanitize_yaml_text(text: str) -> str:
+    """Aspas em escalares com colchetes seguidos de sufixo (ex.: tokens redigidos)."""
+
+    def _quote(match: re.Match[str]) -> str:
+        indent, key, value = match.group(1), match.group(2), match.group(3)
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        return f'{indent}{key}: "{escaped}"'
+
+    return _BRACKET_SCALAR_RE.sub(_quote, text)
 
 
 def load_yaml_file(file_path: Path) -> Any:
@@ -25,7 +44,7 @@ def load_yaml_file(file_path: Path) -> Any:
         raise ParseError(f"Não foi possível ler o arquivo: {exc}", file_path=file_path) from exc
 
     try:
-        document = yaml.safe_load(text)
+        document = yaml.safe_load(_sanitize_yaml_text(text))
     except yaml.YAMLError as exc:
         raise ParseError(f"YAML inválido: {exc}", file_path=file_path) from exc
 

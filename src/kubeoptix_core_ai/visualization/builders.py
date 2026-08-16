@@ -5,6 +5,8 @@ from __future__ import annotations
 from kubeoptix_core_ai.report.pipeline import AssessmentBundle
 from kubeoptix_core_ai.visualization.datasets import communication, composition, numeric, workload
 from kubeoptix_core_ai.visualization.interpretation import interpret_visualization
+from kubeoptix_core_ai.visualization.bar_chart import BarChart
+from kubeoptix_core_ai.visualization.doughnut_chart import DoughnutChart
 from kubeoptix_core_ai.visualization.mermaid import MermaidGenerator
 from kubeoptix_core_ai.visualization.models import (
     ChartDataset,
@@ -48,7 +50,7 @@ def _spec_from_numeric(
     section: str,
     dataset: ChartDataset,
 ) -> VisualizationSpec:
-    mermaid = _generator.render_numeric(dataset)
+    html = BarChart(dataset).render()
     provenance = _collect_provenance_numeric(dataset)
     interpretation = interpret_visualization(dataset)
     return VisualizationSpec(
@@ -57,7 +59,7 @@ def _spec_from_numeric(
         question=dataset.question,
         section=section,
         status=VisualizationStatus.AVAILABLE,
-        mermaid=mermaid,
+        html=html,
         interpretation=interpretation,
         provenance=provenance,
         dataset_kind="numeric",
@@ -69,7 +71,7 @@ def _spec_from_composition(
     section: str,
     dataset: CompositionDataset,
 ) -> VisualizationSpec:
-    mermaid = _generator.render_composition(dataset)
+    html = DoughnutChart(dataset).render()
     provenance = _collect_provenance_composition(dataset)
     interpretation = interpret_visualization(dataset)
     return VisualizationSpec(
@@ -78,7 +80,7 @@ def _spec_from_composition(
         question=dataset.question,
         section=section,
         status=VisualizationStatus.AVAILABLE,
-        mermaid=mermaid,
+        html=html,
         interpretation=interpretation,
         provenance=provenance,
         dataset_kind="composition",

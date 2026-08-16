@@ -83,6 +83,7 @@ def build_cpu_request_chart(bundle: AssessmentBundle) -> ChartDataset | None:
         question="Quanto de CPU cada workload reserva por pod?",
         x_labels=tuple(labels),
         y_axis_label="CPU (millicores)",
+        x_axis_label="Workload",
         series=(
             ChartSeries(
                 name="CPU request",
@@ -117,6 +118,7 @@ def build_cpu_limit_chart(bundle: AssessmentBundle) -> ChartDataset | None:
         question="Qual o teto de CPU configurado por pod em cada workload?",
         x_labels=tuple(labels),
         y_axis_label="CPU (millicores)",
+        x_axis_label="Workload",
         series=(
             ChartSeries(
                 name="CPU limit",
@@ -151,6 +153,7 @@ def build_memory_request_chart(bundle: AssessmentBundle) -> ChartDataset | None:
         question="Quanto de memória cada workload reserva por pod?",
         x_labels=tuple(labels),
         y_axis_label="Memória (MiB)",
+        x_axis_label="Workload",
         series=(
             ChartSeries(
                 name="Mem request",
@@ -185,6 +188,7 @@ def build_memory_limit_chart(bundle: AssessmentBundle) -> ChartDataset | None:
         question="Qual o teto de memória configurado por pod em cada workload?",
         x_labels=tuple(labels),
         y_axis_label="Memória (MiB)",
+        x_axis_label="Workload",
         series=(
             ChartSeries(
                 name="Mem limit",
@@ -229,6 +233,7 @@ def build_cpu_request_limit_chart(bundle: AssessmentBundle) -> ChartDataset | No
         question="Como request e limit de CPU se comparam em cada workload?",
         x_labels=tuple(labels),
         y_axis_label="CPU (millicores)",
+        x_axis_label="Workload",
         series=(
             ChartSeries(name="Request", points=tuple(request_points), series_type="bar"),
             ChartSeries(name="Limit", points=tuple(limit_points), series_type="bar"),
@@ -270,6 +275,7 @@ def build_memory_request_limit_chart(bundle: AssessmentBundle) -> ChartDataset |
         question="Como request e limit de memória se comparam em cada workload?",
         x_labels=tuple(labels),
         y_axis_label="Memória (MiB)",
+        x_axis_label="Workload",
         series=(
             ChartSeries(name="Request", points=tuple(request_points), series_type="bar"),
             ChartSeries(name="Limit", points=tuple(limit_points), series_type="bar"),
@@ -335,6 +341,7 @@ def build_namespace_requests_vs_allocatable(bundle: AssessmentBundle) -> ChartDa
         question="Os requests agregados do namespace cabem no pool de scheduling relevante?",
         x_labels=tuple(labels),
         y_axis_label=y_label,
+        x_axis_label="Recurso",
         series=(
             ChartSeries(name="Request namespace", points=request_points, series_type="bar"),
             ChartSeries(name="Allocatable pool", points=capacity_points, series_type="bar"),

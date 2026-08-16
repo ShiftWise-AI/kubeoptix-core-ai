@@ -68,7 +68,7 @@ def test_visualization_bundle_includes_numeric_and_flowcharts(
     assert any(v.id.startswith("ext_comm_") for v in available)
     assert any(v.id == "workload_node_placement" for v in available)
     for v in available:
-        assert v.mermaid
+        assert v.mermaid or v.html
         assert v.provenance
 
 
@@ -83,7 +83,7 @@ def test_markdown_contains_mermaid_blocks(
     md = MarkdownReportGenerator().generate(bundle)
 
     assert "```mermaid" in md
-    assert "xychart-beta" in md
+    assert "kubeoptix-doughnut" in md or "kubeoptix-bar-chart" in md
     assert "### Visualizações" in md
     assert "Visualização indisponível" in md or "flowchart" in md
 

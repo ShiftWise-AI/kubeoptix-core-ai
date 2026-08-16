@@ -19,7 +19,9 @@ def render_visualization_block(viz: VisualizationSpec) -> str:
         lines.append("")
         return "\n".join(lines)
 
-    if viz.mermaid:
+    if viz.html:
+        lines.extend([viz.html, ""])
+    elif viz.mermaid:
         lines.extend(["```mermaid", viz.mermaid, "```", ""])
 
     return "\n".join(lines)
