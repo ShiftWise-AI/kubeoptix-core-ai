@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from kubeoptix_analyzer.analysis.findings_builder import FindingBuilder
-from kubeoptix_analyzer.models.finding import Confidence, EvidenceItem, Severity
+from kubeoptix_core_ai.analysis.findings_builder import FindingBuilder
+from kubeoptix_core_ai.models.finding import Confidence, EvidenceItem, Severity
 
 
 def test_finding_ids_sequential_per_category() -> None:

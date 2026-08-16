@@ -1,4 +1,4 @@
-# kubeoptix-analyzer
+# kubeoptix-core-ai
 
 Agente local de análise de workloads OpenShift/Kubernetes. Lê metadados YAML
 coletados do cluster, aplica regras determinísticas e, opcionalmente, uma
@@ -19,25 +19,25 @@ pip install -e ".[dev]"
 
 ```bash
 # Listar namespaces disponíveis
-kubeoptix-analyzer list-namespaces
+kubeoptix-core-ai list-namespaces
 
 # Diagnóstico de ingestão (sem findings operacionais)
-kubeoptix-analyzer diagnose --namespace meu-namespace-prd
+kubeoptix-core-ai diagnose --namespace meu-namespace-prd
 
 # Análise completa (determinística + ML local)
-kubeoptix-analyzer analyze --namespace meu-namespace-prd
+kubeoptix-core-ai analyze --namespace meu-namespace-prd
 
 # Apenas regras determinísticas
-kubeoptix-analyzer analyze --namespace meu-namespace-prd --no-ml
+kubeoptix-core-ai analyze --namespace meu-namespace-prd --no-ml
 
 # Seed reproduzível para K-Means e Isolation Forest
-kubeoptix-analyzer analyze --namespace meu-namespace-prd --ml-seed 42
+kubeoptix-core-ai analyze --namespace meu-namespace-prd --ml-seed 42
 
 # Saída JSON
-kubeoptix-analyzer analyze --namespace meu-namespace-prd --json
+kubeoptix-core-ai analyze --namespace meu-namespace-prd --json
 
 # Relatório Markdown de assessment
-kubeoptix-analyzer report --namespace meu-namespace-prd --output output/
+kubeoptix-core-ai report --namespace meu-namespace-prd --output output/
 ```
 
 ### Variáveis de ambiente
@@ -69,7 +69,7 @@ namespace — **nunca substitui** regras simples quando estas são mais confiáv
 
 ## Camada ML local
 
-Documentação detalhada em [`src/kubeoptix_analyzer/ml/README.md`](src/kubeoptix_analyzer/ml/README.md).
+Documentação detalhada em [`src/kubeoptix_core_ai/ml/README.md`](src/kubeoptix_core_ai/ml/README.md).
 
 | Técnica | Módulo | Problema que resolve |
 |---------|--------|----------------------|
@@ -94,4 +94,4 @@ pytest
 
 ## Especificação do agente
 
-Metodologia e formato de relatório em [`kubeoptix-analyzer-agent-spec/`](kubeoptix-analyzer-agent-spec/).
+Metodologia e formato de relatório em [`kubeoptix-core-ai-agent-spec/`](kubeoptix-core-ai-agent-spec/).

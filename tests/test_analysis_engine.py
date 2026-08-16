@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from kubeoptix_analyzer.analysis.engine import AnalysisEngine
-from kubeoptix_analyzer.config import AnalyzerConfig
-from kubeoptix_analyzer.models.finding import Severity
+from kubeoptix_core_ai.analysis.engine import AnalysisEngine
+from kubeoptix_core_ai.config import AnalyzerConfig
+from kubeoptix_core_ai.models.finding import Severity
 
 from tests.conftest import EXAMPLE_NAMESPACE
 

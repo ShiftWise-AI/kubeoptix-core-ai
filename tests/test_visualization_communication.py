@@ -7,17 +7,17 @@ from pathlib import Path
 
 import pytest
 
-from kubeoptix_analyzer.config import AnalyzerConfig
-from kubeoptix_analyzer.parsers.log import parse_pod_log
-from kubeoptix_analyzer.report.pipeline import AssessmentPipeline
-from kubeoptix_analyzer.visualization.builders import build_all_visualizations
-from kubeoptix_analyzer.visualization.datasets.communication import (
+from kubeoptix_core_ai.config import AnalyzerConfig
+from kubeoptix_core_ai.parsers.log import parse_pod_log
+from kubeoptix_core_ai.report.pipeline import AssessmentPipeline
+from kubeoptix_core_ai.visualization.builders import build_all_visualizations
+from kubeoptix_core_ai.visualization.datasets.communication import (
     build_external_communication_diagrams,
     build_external_dependencies_diagrams,
     build_internal_communication_diagrams,
 )
-from kubeoptix_analyzer.visualization.mermaid import MermaidGenerator
-from kubeoptix_analyzer.visualization.models import VisualizationStatus
+from kubeoptix_core_ai.visualization.mermaid import MermaidGenerator
+from kubeoptix_core_ai.visualization.models import VisualizationStatus
 
 from tests.conftest import EXAMPLE_NAMESPACE
 

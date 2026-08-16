@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from kubeoptix_analyzer.discovery.inventory import scan_namespace_files
+from kubeoptix_core_ai.discovery.inventory import scan_namespace_files
 
 from tests.conftest import EXAMPLE_NAMESPACE
 

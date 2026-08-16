@@ -6,15 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from kubeoptix_analyzer.analysis.context import AnalysisContext
-from kubeoptix_analyzer.analysis.findings_builder import FindingBuilder
-from kubeoptix_analyzer.analysis.probes import analyze_probes
-from kubeoptix_analyzer.config import AnalyzerConfig
-from kubeoptix_analyzer.loaders.workload_loader import WorkloadLoader
-from kubeoptix_analyzer.models.finding import Severity
-from kubeoptix_analyzer.models.node import WorkNodeBundle
-from kubeoptix_analyzer.models.workload import NamespaceWorkloadBundle
-from kubeoptix_analyzer.parsers.deployment import parse_deployment
+from kubeoptix_core_ai.analysis.context import AnalysisContext
+from kubeoptix_core_ai.analysis.findings_builder import FindingBuilder
+from kubeoptix_core_ai.analysis.probes import analyze_probes
+from kubeoptix_core_ai.config import AnalyzerConfig
+from kubeoptix_core_ai.loaders.workload_loader import WorkloadLoader
+from kubeoptix_core_ai.models.finding import Severity
+from kubeoptix_core_ai.models.node import WorkNodeBundle
+from kubeoptix_core_ai.models.workload import NamespaceWorkloadBundle
+from kubeoptix_core_ai.parsers.deployment import parse_deployment
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

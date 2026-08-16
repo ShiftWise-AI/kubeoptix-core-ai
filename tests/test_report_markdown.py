@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from kubeoptix_analyzer.config import AnalyzerConfig
-from kubeoptix_analyzer.report.markdown import MarkdownReportGenerator, write_assessment_report
-from kubeoptix_analyzer.report.pipeline import AssessmentPipeline
+from kubeoptix_core_ai.config import AnalyzerConfig
+from kubeoptix_core_ai.report.markdown import MarkdownReportGenerator, write_assessment_report
+from kubeoptix_core_ai.report.pipeline import AssessmentPipeline
 
 from tests.conftest import EXAMPLE_NAMESPACE
 

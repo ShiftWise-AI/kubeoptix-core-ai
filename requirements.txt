@@ -1,0 +1,17 @@
+# kubeoptix-core-ai — dependências para execução local
+# Requer Python 3.11+
+#
+# Instalação:
+#   python -m venv .venv
+#   source .venv/bin/activate
+#   pip install -r requirements.txt
+#
+# Testes (opcional):
+#   pip install pytest>=8.0,<9
+
+-e .
+
+pydantic>=2.0,<3
+PyYAML>=6.0,<7
+numpy>=1.26,<3
+scikit-learn>=1.3,<2

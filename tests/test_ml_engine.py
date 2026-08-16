@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from kubeoptix_analyzer.analysis.context import AnalysisContext
-from kubeoptix_analyzer.ml.config import MLConfig
-from kubeoptix_analyzer.ml.engine import MLEngine
-from kubeoptix_analyzer.ml.features import build_feature_matrix
-from kubeoptix_analyzer.models.quantities import ResourceQuantity
-from kubeoptix_analyzer.models.source import DataSourceRef, FieldRef
-from kubeoptix_analyzer.models.workload import ContainerSpec, NamespaceWorkloadBundle, Workload
-from kubeoptix_analyzer.normalize.workload import enrich_workload
+from kubeoptix_core_ai.analysis.context import AnalysisContext
+from kubeoptix_core_ai.ml.config import MLConfig
+from kubeoptix_core_ai.ml.engine import MLEngine
+from kubeoptix_core_ai.ml.features import build_feature_matrix
+from kubeoptix_core_ai.models.quantities import ResourceQuantity
+from kubeoptix_core_ai.models.source import DataSourceRef, FieldRef
+from kubeoptix_core_ai.models.workload import ContainerSpec, NamespaceWorkloadBundle, Workload
+from kubeoptix_core_ai.normalize.workload import enrich_workload
 
 _SRC = DataSourceRef(
     file_path="/tmp/deploy.yaml",

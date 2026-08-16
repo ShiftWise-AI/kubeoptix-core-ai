@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kubeoptix_analyzer.parsers.configmap import parse_configmap
-from kubeoptix_analyzer.parsers.route import parse_route
-from kubeoptix_analyzer.parsers.service import parse_service
+from kubeoptix_core_ai.parsers.configmap import parse_configmap
+from kubeoptix_core_ai.parsers.route import parse_route
+from kubeoptix_core_ai.parsers.service import parse_service
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

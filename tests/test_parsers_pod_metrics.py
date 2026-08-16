@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kubeoptix_analyzer.parsers.pod_metrics import parse_pod_metrics
+from kubeoptix_core_ai.parsers.pod_metrics import parse_pod_metrics
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

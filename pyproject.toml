@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "kubeoptix-analyzer"
+name = "kubeoptix-core-ai"
 version = "0.1.0"
 description = "Agente local de análise de workloads OpenShift/Kubernetes"
 readme = "README.md"
@@ -23,7 +23,7 @@ dev = [
 ]
 
 [project.scripts]
-kubeoptix-analyzer = "kubeoptix_analyzer.cli:main"
+kubeoptix-core-ai = "kubeoptix_core_ai.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

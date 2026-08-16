@@ -1,0 +1,2 @@
+[console_scripts]
+kubeoptix-core-ai = kubeoptix_core_ai.cli:main

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kubeoptix_analyzer.parsers.node import parse_node
+from kubeoptix_core_ai.parsers.node import parse_node
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

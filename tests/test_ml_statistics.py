@@ -6,10 +6,10 @@ import math
 
 import numpy as np
 
-from kubeoptix_analyzer.ml.config import MLConfig
-from kubeoptix_analyzer.ml.features import FEATURE_NAMES, FeatureMatrix
-from kubeoptix_analyzer.ml.findings_builder import MLFindingBuilder
-from kubeoptix_analyzer.ml.statistics import analyze_statistics
+from kubeoptix_core_ai.ml.config import MLConfig
+from kubeoptix_core_ai.ml.features import FEATURE_NAMES, FeatureMatrix
+from kubeoptix_core_ai.ml.findings_builder import MLFindingBuilder
+from kubeoptix_core_ai.ml.statistics import analyze_statistics
 
 
 def _matrix(column_values: list[float], feature: str = "cpu_request_m") -> FeatureMatrix:

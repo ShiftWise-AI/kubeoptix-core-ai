@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from kubeoptix_analyzer.errors import ParseError
-from kubeoptix_analyzer.models.source import DataSourceRef
-from kubeoptix_analyzer.normalize.quantities import parse_cpu_quantity, parse_memory_quantity
+from kubeoptix_core_ai.errors import ParseError
+from kubeoptix_core_ai.models.source import DataSourceRef
+from kubeoptix_core_ai.normalize.quantities import parse_cpu_quantity, parse_memory_quantity
 
 SOURCE = DataSourceRef(
     file_path="/tmp/test.yaml",

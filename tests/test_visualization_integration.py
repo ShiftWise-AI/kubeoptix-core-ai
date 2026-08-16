@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from kubeoptix_analyzer.config import AnalyzerConfig
-from kubeoptix_analyzer.report.markdown import MarkdownReportGenerator
-from kubeoptix_analyzer.report.pipeline import AssessmentPipeline
-from kubeoptix_analyzer.visualization.builders import build_all_visualizations
-from kubeoptix_analyzer.visualization.models import VisualizationStatus
-from kubeoptix_analyzer.visualization.pipeline import VisualizationPipeline
+from kubeoptix_core_ai.config import AnalyzerConfig
+from kubeoptix_core_ai.report.markdown import MarkdownReportGenerator
+from kubeoptix_core_ai.report.pipeline import AssessmentPipeline
+from kubeoptix_core_ai.visualization.builders import build_all_visualizations
+from kubeoptix_core_ai.visualization.models import VisualizationStatus
+from kubeoptix_core_ai.visualization.pipeline import VisualizationPipeline
 
 from tests.conftest import EXAMPLE_NAMESPACE
 

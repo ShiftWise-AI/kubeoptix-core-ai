@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from kubeoptix_analyzer.visualization.mermaid import MermaidGenerator
-from kubeoptix_analyzer.visualization.models import (
+from kubeoptix_core_ai.visualization.mermaid import MermaidGenerator
+from kubeoptix_core_ai.visualization.models import (
     ChartDataset,
     ChartPoint,
     ChartSeries,

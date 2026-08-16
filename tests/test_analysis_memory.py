@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kubeoptix_analyzer.analysis.context import AnalysisContext
-from kubeoptix_analyzer.analysis.findings_builder import FindingBuilder
-from kubeoptix_analyzer.analysis.memory import analyze_memory
-from kubeoptix_analyzer.models.workload import NamespaceWorkloadBundle
-from kubeoptix_analyzer.normalize.workload import enrich_workload
-from kubeoptix_analyzer.parsers.deployment import parse_deployment
-from kubeoptix_analyzer.parsers.pod_metrics import parse_pod_metrics
+from kubeoptix_core_ai.analysis.context import AnalysisContext
+from kubeoptix_core_ai.analysis.findings_builder import FindingBuilder
+from kubeoptix_core_ai.analysis.memory import analyze_memory
+from kubeoptix_core_ai.models.workload import NamespaceWorkloadBundle
+from kubeoptix_core_ai.normalize.workload import enrich_workload
+from kubeoptix_core_ai.parsers.deployment import parse_deployment
+from kubeoptix_core_ai.parsers.pod_metrics import parse_pod_metrics
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

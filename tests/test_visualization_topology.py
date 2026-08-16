@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from kubeoptix_analyzer.models.inventory import ServicePortSpec, ServiceSpec
-from kubeoptix_analyzer.models.source import DataSourceRef
-from kubeoptix_analyzer.models.workload import Workload
-from kubeoptix_analyzer.visualization.topology.matcher import (
+from kubeoptix_core_ai.models.inventory import ServicePortSpec, ServiceSpec
+from kubeoptix_core_ai.models.source import DataSourceRef
+from kubeoptix_core_ai.models.workload import Workload
+from kubeoptix_core_ai.visualization.topology.matcher import (
     selector_matches_labels,
     services_for_workload,
     workloads_for_service,

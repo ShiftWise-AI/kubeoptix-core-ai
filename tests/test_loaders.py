@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from kubeoptix_analyzer.config import AnalyzerConfig
-from kubeoptix_analyzer.errors import ConfigurationError
-from kubeoptix_analyzer.loaders.workload_loader import WorkloadLoader
-from kubeoptix_analyzer.loaders.worknode_loader import WorknodeLoader
-from kubeoptix_analyzer.normalize.qos import QOS_BURSTABLE
+from kubeoptix_core_ai.config import AnalyzerConfig
+from kubeoptix_core_ai.errors import ConfigurationError
+from kubeoptix_core_ai.loaders.workload_loader import WorkloadLoader
+from kubeoptix_core_ai.loaders.worknode_loader import WorknodeLoader
+from kubeoptix_core_ai.normalize.qos import QOS_BURSTABLE
 
 from tests.conftest import EXAMPLE_NAMESPACE
 

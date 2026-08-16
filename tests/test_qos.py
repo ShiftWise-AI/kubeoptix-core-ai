@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from kubeoptix_analyzer.models.quantities import ResourceQuantity
-from kubeoptix_analyzer.models.source import DataSourceRef, FieldRef
-from kubeoptix_analyzer.models.workload import ContainerSpec
-from kubeoptix_analyzer.normalize.qos import (
+from kubeoptix_core_ai.models.quantities import ResourceQuantity
+from kubeoptix_core_ai.models.source import DataSourceRef, FieldRef
+from kubeoptix_core_ai.models.workload import ContainerSpec
+from kubeoptix_core_ai.normalize.qos import (
     QOS_BEST_EFFORT,
     QOS_BURSTABLE,
     QOS_GUARANTEED,

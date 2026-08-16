@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from kubeoptix_analyzer.visualization.sanitize import sanitize_mermaid_id, sanitize_mermaid_label
+from kubeoptix_core_ai.visualization.sanitize import sanitize_mermaid_id, sanitize_mermaid_label
 
 
 def test_sanitize_mermaid_id_replaces_invalid_chars() -> None:
@@ -26,7 +26,7 @@ def test_sanitize_mermaid_label_preserves_slashes() -> None:
 
 
 def test_flowchart_quotes_labels_with_special_chars() -> None:
-    from kubeoptix_analyzer.visualization.mermaid.flowchart import _node_shape
+    from kubeoptix_core_ai.visualization.mermaid.flowchart import _node_shape
 
     line = _node_shape("route", "route_x", "Route/backend-acesso-app")
     assert '    route_x{{"Route/backend-acesso-app"}}' == line
@@ -39,7 +39,7 @@ def test_flowchart_quotes_labels_with_special_chars() -> None:
 
 
 def test_flowchart_rect_fallback_for_parens() -> None:
-    from kubeoptix_analyzer.visualization.mermaid.flowchart import _node_shape
+    from kubeoptix_core_ai.visualization.mermaid.flowchart import _node_shape
 
     line = _node_shape("database", "dep_x", "Oracle Database (JDBC)")
     assert '    dep_x["Oracle Database (JDBC)"]' == line
@@ -49,8 +49,8 @@ def test_flowchart_rect_fallback_for_parens() -> None:
 
 
 def test_flowchart_rect_fallback_for_brackets() -> None:
-    from kubeoptix_analyzer.visualization.mermaid.flowchart import _node_shape
-    from kubeoptix_analyzer.visualization.sanitize import label_needs_rect_node_shape
+    from kubeoptix_core_ai.visualization.mermaid.flowchart import _node_shape
+    from kubeoptix_core_ai.visualization.sanitize import label_needs_rect_node_shape
 
     label = "Image<br/>registry:4567[CAMINHO_REMOVIDO]"
     assert label_needs_rect_node_shape(label)
@@ -59,7 +59,7 @@ def test_flowchart_rect_fallback_for_brackets() -> None:
 
 
 def test_sanitize_mermaid_edge_label_quotes_when_needed() -> None:
-    from kubeoptix_analyzer.visualization.sanitize import sanitize_mermaid_edge_label
+    from kubeoptix_core_ai.visualization.sanitize import sanitize_mermaid_edge_label
 
     assert sanitize_mermaid_edge_label("selector") == "selector"
     assert sanitize_mermaid_edge_label("TLS edge (HTTP permitido)") == (
@@ -68,7 +68,7 @@ def test_sanitize_mermaid_edge_label_quotes_when_needed() -> None:
 
 
 def test_sanitize_mermaid_pie_title_without_quotes() -> None:
-    from kubeoptix_analyzer.visualization.sanitize import sanitize_mermaid_pie_title
+    from kubeoptix_core_ai.visualization.sanitize import sanitize_mermaid_pie_title
 
     assert '"' not in sanitize_mermaid_pie_title('Distribuição de QoS')
     assert sanitize_mermaid_pie_title("A: B") == "A - B"

@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from kubeoptix_analyzer.analysis.helpers import (
+from kubeoptix_core_ai.analysis.helpers import (
     aggregate_runtime_usage,
     derive_scheduling_pool_selector,
     node_role_label,
 )
-from kubeoptix_analyzer.models.node import WorkNode
-from kubeoptix_analyzer.models.source import DataSourceRef
-from kubeoptix_analyzer.models.workload import Workload
+from kubeoptix_core_ai.models.node import WorkNode
+from kubeoptix_core_ai.models.source import DataSourceRef
+from kubeoptix_core_ai.models.workload import Workload
 
 
 def _workload(name: str, selector: dict[str, str]) -> Workload:

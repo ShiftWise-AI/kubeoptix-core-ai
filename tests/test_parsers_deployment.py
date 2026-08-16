@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from kubeoptix_analyzer.parsers.deployment import parse_deployment
+from kubeoptix_core_ai.parsers.deployment import parse_deployment
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

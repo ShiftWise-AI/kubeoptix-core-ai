@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from kubeoptix_analyzer.config import AnalyzerConfig
-from kubeoptix_analyzer.diagnostic.runner import DiagnosticRunner
+from kubeoptix_core_ai.config import AnalyzerConfig
+from kubeoptix_core_ai.diagnostic.runner import DiagnosticRunner
 
 from tests.conftest import EXAMPLE_NAMESPACE
 
