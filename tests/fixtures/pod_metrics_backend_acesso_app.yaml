@@ -1,0 +1,14 @@
+apiVersion: metrics.k8s.io/v1beta1
+containers:
+- name: backend-acesso-app
+  usage:
+    cpu: 6365928n
+    memory: 841428Ki
+kind: PodMetrics
+metadata:
+  labels:
+    app: backend-acesso-app
+  name: backend-acesso-app-7dd76c8686-g7z2n
+  namespace: example-ns-prd
+timestamp: "2026-08-10T21:15:15Z"
+window: 15.268s

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: backend-acesso-app-7dd76c8686-g7z2n
+  namespace: example-ns-prd
+  ownerReferences:
+  - apiVersion: apps/v1
+    controller: true
+    kind: ReplicaSet
+    name: backend-acesso-app-7dd76c8686
+spec:
+  nodeName: osc3dv0117
+  nodeSelector:
+    env: prd
+    type: app
+status:
+  qosClass: Burstable

@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: example-frontend
+  namespace: example-ns-prd
+  labels:
+    app: example-frontend
+data:
+  PROJECT: example-frontend

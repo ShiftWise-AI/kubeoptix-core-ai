@@ -1,0 +1,25 @@
+# Ignore Git
+.git/
+.gitignore
+
+# Ignore IDEs
+.vscode/
+.cursor/
+.idea/
+*.swp
+*~
+
+# Ignore Python source code and environments
+*.py
+__pycache__/
+.venv/
+venv/
+env/
+.pytest_cache/
+*.log
+
+# Ignore Podman / Docker files
+Dockerfile
+Containerfile
+.podmanignore
+.dockerignore
