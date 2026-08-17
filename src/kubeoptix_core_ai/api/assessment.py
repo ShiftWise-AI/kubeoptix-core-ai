@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 from kubeoptix_core_ai.config import (
@@ -71,21 +69,9 @@ def dedupe_namespaces(namespaces: list[str]) -> list[str]:
     return ordered
 
 
-def build_report_filename(
-    namespace: str,
-    namespaces: list[str],
-    generated_at: datetime,
-) -> str:
-    """Monta nome de arquivo que identifica o namespace e o lote analisado."""
-    timestamp = generated_at.strftime("%Y%m%dT%H%M%SZ")
-    if len(namespaces) == 1:
-        return f"{namespace}__{timestamp}.md"
-
-    batch_token = "_".join(sorted(namespaces))
-    if len(batch_token) > 96:
-        digest = hashlib.sha256(batch_token.encode("utf-8")).hexdigest()[:12]
-        batch_token = f"{batch_token[:48]}__{digest}"
-    return f"{namespace}__batch-{batch_token}__{timestamp}.md"
+def build_report_filename(namespace: str) -> str:
+    """Monta nome de arquivo `<namespace>.md`."""
+    return f"{namespace}.md"
 
 
 class AssessmentService:
@@ -135,7 +121,6 @@ class AssessmentService:
         pipeline = AssessmentPipeline(config)
         self._reports_dir.mkdir(parents=True, exist_ok=True)
 
-        generated_at = datetime.now(tz=UTC)
         reports: list[NamespaceReportResult] = []
 
         for namespace in ordered:
@@ -148,7 +133,7 @@ class AssessmentService:
                     f"Falha ao analisar o namespace {namespace!r}: {exc}"
                 ) from exc
 
-            filename = build_report_filename(namespace, ordered, generated_at)
+            filename = build_report_filename(namespace)
             report_path = self._reports_dir / filename
             content = MarkdownReportGenerator().generate(bundle)
             report_path.write_bytes(content.encode(REPORT_FILE_ENCODING))

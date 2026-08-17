@@ -348,7 +348,7 @@ async def run_analysis(request: AnalysisRequest) -> AnalysisResponse:
       "reports": [
         {
           "namespace": "example-ns-prd",
-          "report_path": "/app/data/reports/example-ns-prd__20250817T113045Z.md",
+          "report_path": "/app/data/reports/example-ns-prd.md",
           "workloads_analyzed": 3,
           "finding_count": 12
         }

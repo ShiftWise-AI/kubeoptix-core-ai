@@ -3,9 +3,10 @@
 # =============================================================================
 #
 # Endpoints disponíveis:
-#   GET /health/live   — liveness (sempre 200 quando o processo está ativo)
-#   GET /health/ready  — readiness (200 se todos os checks UP; 503 se algum DOWN)
-#   GET /health        — status geral (versão, uptime, timestamp)
+#   GET  /health/live   — liveness (sempre 200 quando o processo está ativo)
+#   GET  /health/ready  — readiness (200 se todos os checks UP; 503 se algum DOWN)
+#   GET  /health        — status geral (versão, uptime, timestamp)
+#   POST /analysis      — análise de um ou mais namespaces (gera relatório Markdown)
 #
 # Porta padrão: 8000 (variável de ambiente PORT)
 #
@@ -79,7 +80,42 @@ curl -sS -w "\nHTTP %{http_code}\n" -X GET "${BASE_URL}/health"
 curl -sS -X GET "${BASE_URL}/health" | jq .
 
 # -----------------------------------------------------------------------------
-# 6. Teste rápido dos três endpoints (com código HTTP)
+# 6. Análise de namespaces — POST /analysis
+# -----------------------------------------------------------------------------
+# Esperado: HTTP 201 (sucesso) | 404 (namespace inexistente) | 422 (body inválido)
+# Dados:    KUBEOPTIX_METADATA_DIR (padrão: /app/data/assessment)
+# Saída:    KUBEOPTIX_OUTPUT_DIR (padrão: /app/data/reports)
+#
+# Local — aponte para um diretório de assessment com namespaces reais:
+#   export KUBEOPTIX_METADATA_DIR=/caminho/para/assessment
+#   export KUBEOPTIX_OUTPUT_DIR=/tmp/reports
+#   python api.py
+#
+# Um namespace:
+curl -sS -X POST "${BASE_URL}/analysis" \
+  -H "Content-Type: application/json" \
+  -d '{"namespaces": ["example-ns-prd"], "enable_ml": false}'
+
+curl -sS -w "\nHTTP %{http_code}\n" -X POST "${BASE_URL}/analysis" \
+  -H "Content-Type: application/json" \
+  -d '{"namespaces": ["example-ns-prd"], "enable_ml": false}'
+
+curl -sS -X POST "${BASE_URL}/analysis" \
+  -H "Content-Type: application/json" \
+  -d '{"namespaces": ["example-ns-prd"], "enable_ml": false}' | jq .
+
+# Múltiplos namespaces:
+curl -sS -X POST "${BASE_URL}/analysis" \
+  -H "Content-Type: application/json" \
+  -d '{"namespaces": ["example-ns-prd", "other-ns-prd"], "enable_ml": false}' | jq .
+
+# Namespace inexistente (esperado: HTTP 404):
+curl -sS -w "\nHTTP %{http_code}\n" -X POST "${BASE_URL}/analysis" \
+  -H "Content-Type: application/json" \
+  -d '{"namespaces": ["namespace-que-nao-existe"]}'
+
+# -----------------------------------------------------------------------------
+# 7. Teste rápido dos três endpoints (com código HTTP)
 # -----------------------------------------------------------------------------
 
 for path in /health/live /health/ready /health; do
@@ -90,7 +126,7 @@ for path in /health/live /health/ready /health; do
 done
 
 # -----------------------------------------------------------------------------
-# 7. Verbose (útil para depuração de TLS/headers em OpenShift)
+# 8. Verbose (útil para depuração de TLS/headers em OpenShift)
 # -----------------------------------------------------------------------------
 
 curl -v -X GET "${BASE_URL}/health/live"
@@ -100,7 +136,7 @@ curl -v -X GET "${BASE_URL}/health/ready"
 curl -v -X GET "${BASE_URL}/health"
 
 # -----------------------------------------------------------------------------
-# 8. Troubleshooting — "curl: (56) Recv failure: Connection reset by peer"
+# 9. Troubleshooting — "curl: (56) Recv failure: Connection reset by peer"
 # -----------------------------------------------------------------------------
 #
 # Causa comum com Podman: localhost resolve para IPv6 (::1), mas o mapeamento
@@ -117,7 +153,7 @@ curl -v -X GET "${BASE_URL}/health"
 #   ss -tlnp | grep 8000
 #
 # -----------------------------------------------------------------------------
-# 9. OpenShift — exemplos auxiliares
+# 10. OpenShift — exemplos auxiliares
 # -----------------------------------------------------------------------------
 #
 # Port-forward do Service:
@@ -129,3 +165,9 @@ curl -v -X GET "${BASE_URL}/health"
 # Testar probes como o cluster (dentro do pod ou via port-forward):
 #   curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/health/live
 #   curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/health/ready
+#
+# Análise via exec no pod (ajuste o namespace analisado):
+#   oc exec -n shiftwise-ai statefulset/kubeoptix-core-ai -- \
+#     curl -sS -X POST "http://127.0.0.1:8000/analysis" \
+#     -H "Content-Type: application/json" \
+#     -d '{"namespaces": ["meu-namespace-prd"], "enable_ml": false}'

@@ -52,7 +52,7 @@ saída é criado automaticamente se não existir.
   "reports": [
     {
       "namespace": "example-ns-prd",
-      "report_path": "/app/data/reports/example-ns-prd__20250817T113045Z.md",
+      "report_path": "/app/data/reports/example-ns-prd.md",
       "workloads_analyzed": 3,
       "finding_count": 12
     }
@@ -68,8 +68,8 @@ saída é criado automaticamente se não existir.
 }
 ```
 
-Resposta com um relatório por namespace. O nome do arquivo inclui o namespace analisado,
-um identificador do lote (`batch-...`) e um timestamp UTC para evitar colisões.
+Resposta com um relatório por namespace. O nome do arquivo é `<namespace>.md`
+(por exemplo, `example-ns-prd.md`).
 
 #### Erros
 
