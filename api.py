@@ -14,9 +14,15 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, AsyncIterator
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from kubeoptix_core_ai.api.assessment import (
+    AssessmentService,
+    NamespaceNotFoundError,
+)
+from kubeoptix_core_ai.errors import AnalyzerError, ConfigurationError
 
 DEFAULT_PORT = 8000
 APP_NAME = "kubeoptix-core-ai"
@@ -88,6 +94,48 @@ class HealthResponse(BaseModel):
     version: str
     uptime_seconds: float = Field(ge=0)
     mark_down_file: str | None = None
+
+
+class AnalysisRequest(BaseModel):
+    """Corpo da requisição para análise de um ou mais namespaces."""
+
+    namespaces: list[str] = Field(
+        ...,
+        min_length=1,
+        description="Lista com um ou mais namespaces a analisar.",
+        examples=[["example-ns-prd"], ["example-ns-prd", "other-ns-prd"]],
+    )
+    enable_ml: bool | None = Field(
+        default=None,
+        description=(
+            "Ativa ou desativa a camada ML local. "
+            "Quando omitido, usa a configuração de ambiente."
+        ),
+    )
+
+    @field_validator("namespaces")
+    @classmethod
+    def validate_namespace_entries(cls, namespaces: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for namespace in namespaces:
+            if not namespace or not namespace.strip():
+                raise ValueError("Cada namespace deve ser uma string não vazia.")
+            cleaned.append(namespace.strip())
+        return cleaned
+
+
+class NamespaceReportResponse(BaseModel):
+    namespace: str
+    report_path: str
+    workloads_analyzed: int = Field(ge=0)
+    finding_count: int = Field(ge=0)
+
+
+class AnalysisResponse(BaseModel):
+    """Resultado da análise com caminhos dos relatórios Markdown gerados."""
+
+    status: str
+    reports: list[NamespaceReportResponse]
 
 
 def _uptime_seconds() -> float:
@@ -253,6 +301,101 @@ async def health() -> HealthResponse:
         version=APP_VERSION,
         uptime_seconds=_uptime_seconds(),
         mark_down_file=str(_resolve_mark_down_file()) if _resolve_mark_down_file() else None,
+    )
+
+
+def _get_assessment_service() -> AssessmentService:
+    return AssessmentService()
+
+
+@app.post(
+    "/analysis",
+    response_model=AnalysisResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Executar análise de namespaces",
+    response_description="Análise concluída com relatórios Markdown gerados.",
+)
+async def run_analysis(request: AnalysisRequest) -> AnalysisResponse:
+    """
+    Executa a análise de um ou mais namespaces e gera relatórios Markdown.
+
+    Os dados de workloads e worknodes são lidos de `/app/data/assessment`
+    (ou `KUBEOPTIX_METADATA_DIR`). Os relatórios são gravados em
+    `/app/data/reports` (ou `KUBEOPTIX_OUTPUT_DIR`).
+
+    **Exemplo de requisição (um namespace):**
+
+    ```json
+    {
+      "namespaces": ["example-ns-prd"]
+    }
+    ```
+
+    **Exemplo de requisição (múltiplos namespaces):**
+
+    ```json
+    {
+      "namespaces": ["example-ns-prd", "other-ns-prd"],
+      "enable_ml": false
+    }
+    ```
+
+    **Exemplo de resposta (201 Created):**
+
+    ```json
+    {
+      "status": "SUCCESS",
+      "reports": [
+        {
+          "namespace": "example-ns-prd",
+          "report_path": "/app/data/reports/example-ns-prd__20250817T113045Z.md",
+          "workloads_analyzed": 3,
+          "finding_count": 12
+        }
+      ]
+    }
+    ```
+    """
+    service = _get_assessment_service()
+    try:
+        result = service.run(
+            request.namespaces,
+            enable_ml=request.enable_ml,
+        )
+    except NamespaceNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "message": str(exc),
+                "missing_namespaces": exc.missing,
+            },
+        ) from exc
+    except ConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"message": str(exc)},
+        ) from exc
+    except AnalyzerError as exc:
+        logger.exception(
+            "Falha na análise de namespaces",
+            extra={"namespaces": request.namespaces},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"message": str(exc)},
+        ) from exc
+
+    return AnalysisResponse(
+        status=result.status,
+        reports=[
+            NamespaceReportResponse(
+                namespace=report.namespace,
+                report_path=str(report.report_path),
+                workloads_analyzed=report.workloads_analyzed,
+                finding_count=report.finding_count,
+            )
+            for report in result.reports
+        ],
     )
 
 

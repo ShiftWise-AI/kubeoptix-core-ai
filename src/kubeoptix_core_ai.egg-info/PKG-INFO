@@ -178,6 +178,12 @@ within the namespace.
 pytest
 ```
 
+## HTTP API
+
+REST endpoints for health checks and namespace analysis are documented in
+[`docs/api.md`](docs/api.md). Interactive OpenAPI docs are available at `/docs`
+when running `python api.py`.
+
 ## Agent specification
 
 Methodology and report format:

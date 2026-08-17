@@ -103,6 +103,13 @@ done
 echo "Instalando release ${RELEASE} no namespace ${NAMESPACE}..."
 helm "${HELM_ARGS[@]}"
 
+SA_NAME="$(oc get statefulset "${RELEASE}" -n "${NAMESPACE}" -o jsonpath='{.spec.template.spec.serviceAccountName}' 2>/dev/null || true)"
+if [[ -n "${SA_NAME}" ]] && ! oc get serviceaccount "${SA_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1; then
+  echo "StatefulSet referencia ServiceAccount inexistente (${SA_NAME}); recriando workload..."
+  oc delete statefulset "${RELEASE}" -n "${NAMESPACE}" --wait=true
+  helm "${HELM_ARGS[@]}"
+fi
+
 BC_NAME="${RELEASE}"
 if oc get buildconfig "${BC_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1; then
   echo

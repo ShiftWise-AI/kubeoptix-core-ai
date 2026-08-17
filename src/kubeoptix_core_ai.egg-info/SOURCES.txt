@@ -27,6 +27,8 @@ src/kubeoptix_core_ai/analysis/resources.py
 src/kubeoptix_core_ai/analysis/scheduling.py
 src/kubeoptix_core_ai/analysis/storage.py
 src/kubeoptix_core_ai/analysis/workload_node.py
+src/kubeoptix_core_ai/api/__init__.py
+src/kubeoptix_core_ai/api/assessment.py
 src/kubeoptix_core_ai/diagnostic/__init__.py
 src/kubeoptix_core_ai/diagnostic/aggregator.py
 src/kubeoptix_core_ai/diagnostic/report.py
@@ -105,6 +107,7 @@ tests/test_analysis_memory.py
 tests/test_analysis_probes.py
 tests/test_analysis_scoring.py
 tests/test_api.py
+tests/test_api_assessment.py
 tests/test_config.py
 tests/test_diagnostic_aggregator.py
 tests/test_diagnostic_runner.py

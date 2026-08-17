@@ -70,6 +70,23 @@ oc rollout restart statefulset/kubeoptix-core-ai -n shiftwise-ai
 
 O container usa o `CMD` da imagem (`python api.py`).
 
+## API de análise
+
+| Método | Caminho | Descrição |
+|--------|---------|-----------|
+| `POST` | `/analysis` | Analisa um ou mais namespaces e grava relatórios em `KUBEOPTIX_OUTPUT_DIR` |
+
+Exemplo:
+
+```bash
+oc exec -n shiftwise-ai statefulset/kubeoptix-core-ai -- \
+  curl -sS -X POST "http://127.0.0.1:8000/analysis" \
+  -H "Content-Type: application/json" \
+  -d '{"namespaces": ["meu-namespace-prd"]}'
+```
+
+Documentação completa: [`docs/api.md`](../../docs/api.md).
+
 ## Health checks
 
 | Probe | Endpoint |
