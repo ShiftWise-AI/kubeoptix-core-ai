@@ -706,17 +706,12 @@ def _finding_link(finding_id: str) -> str:
     return f"[`{finding_id}`](#{anchor})"
 
 
-def _format_finding_with_anchor(finding: Finding) -> str:
-    anchor = _finding_anchor_id(finding.id)
-    return f'<a id="{anchor}"></a>\n{format_finding(finding)}'
-
-
 def _section_findings(findings: tuple[Finding, ...], intro: str) -> str:
     if not findings:
         return f"{intro}\n\n_Nenhum finding nesta categoria._\n"
     parts = [intro, ""]
     for finding in findings:
-        parts.append(_format_finding_with_anchor(finding))
+        parts.append(format_finding(finding))
         parts.append("")
     return "\n".join(parts)
 
@@ -1198,7 +1193,7 @@ class MarkdownReportGenerator:
         sections.append(
             "Tipos de artefato considerados nesta execução:\n\n"
             "- Workloads: Deployment, StatefulSet, DaemonSet, DeploymentConfig, "
-            "Job, CronJob, ReplicationController (`apps/<app>/` e `resources/`)\n"
+            "Job, CronJob, ReplicationController (`apps/{app}/` e `resources/`)\n"
             "- Pods (`apps/*/pods/`, `resources/pods/`)\n"
             "- Autoscaling: HPA, VPA (`apps/*/hpa|vpa/` ou `resources/`)\n"
             "- PDB (`apps/*/pdb/` ou `resources/poddisruptionbudgets.policy/`)\n"
@@ -1213,7 +1208,7 @@ class MarkdownReportGenerator:
             "- Worknodes (`worknodes/*.yaml`)\n\n"
             "**Correlação:** pods são associados ao controller canônico via "
             "ownerReferences (Pod → ReplicaSet → Deployment, Pod → StatefulSet, "
-            "Job → CronJob, etc.). A pasta `apps/<app_group>/` é varrida "
+            "Job → CronJob, etc.). A pasta `apps/{app_group}/` é varrida "
             "recursivamente e fundida com `resources/`. ReplicaSets históricos "
             "não geram workloads duplicados.\n\n"
             "**Não analisados nesta versão:** conteúdo de Secrets (apenas referências "

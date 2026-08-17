@@ -28,7 +28,7 @@ def sanitize_mermaid_label(raw: str) -> str:
     text = raw.replace("\\", "/")
     text = text.replace('"', "'")
     text = text.replace("[", "(").replace("]", ")")
-    text = text.replace("\n", "<br/>")
+    text = text.replace("\n", " / ")
     text = text.replace("\r", "")
     return text
 

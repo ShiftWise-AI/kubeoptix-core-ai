@@ -210,7 +210,7 @@ def test_recommendations_link_to_finding_anchors(
 
     for finding_id in linked_findings:
         anchor = finding_id.lower()
-        assert f'<a id="{anchor}"></a>' in md
+        assert f"### {finding_id}" in md
         assert f"[`{finding_id}`](#{anchor})" in md
 
     rec_start = md.index("## 19. Recomendações")
