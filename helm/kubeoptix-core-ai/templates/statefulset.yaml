@@ -8,9 +8,6 @@ metadata:
     {{- include "kubeoptix-core-ai.labels" . | nindent 4 }}
   annotations:
     kubeoptix.core-ai/single-instance: "true"
-    {{- if .Values.image.useBuildOutput }}
-    image.openshift.io/triggers: {{ printf `[{"from":{"kind":"ImageStreamTag","name":"%s:%s"},"fieldPath":"spec.template.spec.containers[?(@.name==\"api\")].image"}]` (include "kubeoptix-core-ai.imageStreamName" .) .Values.image.tag | quote }}
-    {{- end }}
 spec:
   replicas: {{ include "kubeoptix-core-ai.replicas" . }}
   serviceName: {{ include "kubeoptix-core-ai.headlessServiceName" . }}
@@ -22,8 +19,7 @@ spec:
       labels:
         {{- include "kubeoptix-core-ai.selectorLabels" . | nindent 8 }}
     spec:
-      serviceAccountName: {{ include "kubeoptix-core-ai.serviceAccountName" . }}
-      automountServiceAccountToken: {{ or .Values.serviceAccount.automountServiceAccountToken .Values.startup.loginWithServiceAccount }}
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: {{ default 30 .Values.terminationGracePeriodSeconds }}
       {{- with .Values.podSecurityContext }}
       securityContext:
@@ -37,12 +33,6 @@ spec:
             - name: http
               containerPort: {{ .Values.service.api.targetPort }}
               protocol: TCP
-          {{- if .Values.startup.script }}
-          command: ["/bin/bash", "-c"]
-          args:
-            - |
-{{ .Values.startup.script | nindent 14 }}
-          {{- end }}
           env:
             {{- range $key, $value := .Values.podEnv }}
             - name: {{ $key }}

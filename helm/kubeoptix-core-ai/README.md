@@ -12,7 +12,6 @@ Chart Helm para instalar o KubeOptix Core AI em OpenShift como **StatefulSet sin
 | Exposição externa | Nenhuma (sem Route/Ingress) |
 | Persistência | PVC existente `harvester-app-data` em `/app/data` |
 | Build | `BuildConfig` + `ImageStream` quando `build.enabled=true` |
-| RBAC | `ServiceAccount` + `ClusterRoleBinding` para `cluster-reader` |
 
 ## Pré-requisitos
 
@@ -62,7 +61,7 @@ oc start-build kubeoptix-core-ai --wait -n shiftwise-ai
 | `KUBEOPTIX_METADATA_DIR` | `/app/data/assessment` |
 | `KUBEOPTIX_OUTPUT_DIR` | `/app/data/reports` |
 
-O container inicia com `startup.script` (login via ServiceAccount + `python /app/api.py`).
+O container usa o `CMD` da imagem (`python api.py`).
 
 ## Health checks
 
@@ -78,7 +77,6 @@ Esta aplicação **não suporta múltiplas réplicas**. Mantenha `scalePolicy.ma
 
 ## Segurança
 
-- Container executa como UID `1001` (non-root).
-- `readOnlyRootFilesystem: true`, sem `privileged`, sem `runAsUser: 0`.
-- ServiceAccount com `automountServiceAccountToken: true` para o `oc login` no startup.
-- `ClusterRoleBinding` para a ClusterRole `cluster-reader` (OpenShift).
+- Compatível com SCC `restricted` do OpenShift (não fixar `runAsUser`/`fsGroup` no values).
+- `readOnlyRootFilesystem` não é forçado no chart (PVC e `/tmp` precisam de escrita).
+- `automountServiceAccountToken: false` (sem acesso à API do cluster).

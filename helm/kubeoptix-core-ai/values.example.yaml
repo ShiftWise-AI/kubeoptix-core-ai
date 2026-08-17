@@ -39,15 +39,6 @@ build:
 nameOverride: ""
 fullnameOverride: ""
 
-serviceAccount:
-  create: true
-  name: shiftwise-ai-user
-  automountServiceAccountToken: true
-
-rbac:
-  createClusterRoleBinding: true
-  clusterRoleName: cluster-reader
-
 service:
   headless:
     enabled: true
@@ -81,17 +72,6 @@ podEnv:
   KUBEOPTIX_METADATA_DIR: "/app/data/assessment"
   KUBEOPTIX_OUTPUT_DIR: "/app/data/reports"
 
-startup:
-  loginWithServiceAccount: true
-  script: |
-    echo "[INFO] Authenticating with in-cluster service account"
-    oc login https://kubernetes.default.svc:443 \
-      --token="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
-      --certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt \
-      && \
-    echo "[INFO] Starting API process" && \
-    exec /app/.venv/bin/python /app/api.py
-
 probes:
   enabled: true
   path: /health
@@ -124,20 +104,14 @@ resources:
 
 terminationGracePeriodSeconds: 30
 
+# OpenShift restricted SCC: não fixar runAsUser/fsGroup (o cluster atribui o UID do namespace).
 podSecurityContext:
   runAsNonRoot: true
-  runAsUser: 1001
-  fsGroup: 1001
   seccompProfile:
     type: RuntimeDefault
 
 containerSecurityContext:
-  runAsNonRoot: true
-  runAsUser: 1001
   allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: true
   capabilities:
     drop:
       - ALL
-  seccompProfile:
-    type: RuntimeDefault

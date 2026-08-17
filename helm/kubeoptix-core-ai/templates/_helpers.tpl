@@ -34,21 +34,13 @@ app.kubernetes.io/name: {{ include "kubeoptix-core-ai.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
-{{- define "kubeoptix-core-ai.serviceAccountName" -}}
-{{- if .Values.serviceAccount.create }}
-{{- default (include "kubeoptix-core-ai.fullname" .) .Values.serviceAccount.name }}
-{{- else }}
-{{- default "default" .Values.serviceAccount.name }}
-{{- end }}
-{{- end }}
-
 {{- define "kubeoptix-core-ai.imageStreamName" -}}
 {{- .Values.image.repository | splitList "/" | last }}
 {{- end }}
 
 {{- define "kubeoptix-core-ai.image" -}}
 {{- if .Values.image.useBuildOutput }}
-{{- printf "%s:%s" (include "kubeoptix-core-ai.imageStreamName" .) .Values.image.tag }}
+{{- printf "image-registry.openshift-image-registry.svc:5000/%s/%s:%s" (include "kubeoptix-core-ai.namespace" .) (include "kubeoptix-core-ai.imageStreamName" .) .Values.image.tag }}
 {{- else }}
 {{- printf "%s:%s" .Values.image.repository .Values.image.tag }}
 {{- end }}
