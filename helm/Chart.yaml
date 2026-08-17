@@ -1,6 +1,0 @@
-apiVersion: v2
-name: kubeoptix-core-ai-api
-description: API REST FastAPI para health checks do KubeOptix Core AI
-type: application
-version: 0.1.0
-appVersion: "0.1.0"

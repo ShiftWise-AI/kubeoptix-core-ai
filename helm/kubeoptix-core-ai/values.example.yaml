@@ -1,0 +1,143 @@
+# Exemplo de values para instalação em OpenShift.
+# Copie este arquivo, ajuste os campos e instale com:
+#   ./install.sh -f my-values.yaml
+#
+# Pré-requisitos:
+#   1. Secret Git (nunca colocar o token neste arquivo):
+#      oc create secret generic github-auth --from-literal=username=<user> --from-literal=password=<TOKEN> --type=kubernetes.io/basic-auth
+#   2. PVC existente harvester-app-data no namespace de destino.
+#
+# Single-instance: scalePolicy.maxReplicas=1; sem HPA/KEDA.
+
+enabled: true
+
+namespace:
+  create: false
+  name: shiftwise-ai
+
+image:
+  useBuildOutput: true
+  repository: default-route-openshift-image-registry.apps-crc.testing/shiftwise-ai/kubeoptix-core-ai
+  tag: latest
+  pullPolicy: Always
+
+build:
+  enabled: true
+  git:
+    uri: https://github.com/ShiftWise-AI/kubeoptix-core-ai.git
+    ref: main
+    sourceSecret: github-auth
+  dockerfilePath: Containerfile
+  resources:
+    requests:
+      cpu: 200m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: shiftwise-ai-user
+  automountServiceAccountToken: true
+
+rbac:
+  createClusterRoleBinding: true
+  clusterRoleName: cluster-reader
+
+service:
+  headless:
+    enabled: true
+    name: core-ai
+    port: 8000
+  api:
+    enabled: true
+    name: core-ai-api
+    type: ClusterIP
+    port: 8000
+    targetPort: 8000
+
+scalePolicy:
+  enabled: true
+  maxReplicas: 1
+
+persistence:
+  enabled: true
+  existingClaim: harvester-app-data
+  mountPath: /app/data
+  reportsPath: /app/data/reports
+
+podEnv:
+  HOME: /tmp
+  KUBECONFIG: /tmp/.kube/config
+  TZ: "America/Sao_Paulo"
+  LOG_LEVEL: INFO
+  PORT: "8000"
+  GRACEFUL_SHUTDOWN_TIMEOUT: "30"
+  MARK_DOWN_FILE: "/app/data/report.md"
+  KUBEOPTIX_METADATA_DIR: "/app/data/assessment"
+  KUBEOPTIX_OUTPUT_DIR: "/app/data/reports"
+
+startup:
+  loginWithServiceAccount: true
+  script: |
+    echo "[INFO] Authenticating with in-cluster service account"
+    oc login https://kubernetes.default.svc:443 \
+      --token="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+      --certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt \
+      && \
+    echo "[INFO] Starting API process" && \
+    exec /app/.venv/bin/python /app/api.py
+
+probes:
+  enabled: true
+  path: /health
+  startup:
+    path: /health/live
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 12
+  readiness:
+    path: /health/ready
+    initialDelaySeconds: 0
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  liveness:
+    path: /health/live
+    initialDelaySeconds: 0
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "2000m"
+    memory: "4Gi"
+
+terminationGracePeriodSeconds: 30
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  fsGroup: 1001
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault

@@ -1,0 +1,41 @@
+{{- if .Values.enabled }}
+{{- if .Values.service.headless.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kubeoptix-core-ai.headlessServiceName" . }}
+  namespace: {{ include "kubeoptix-core-ai.namespace" . }}
+  labels:
+    {{- include "kubeoptix-core-ai.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "kubeoptix-core-ai.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.headless.port }}
+      targetPort: http
+      protocol: TCP
+{{- end }}
+{{- if and .Values.service.headless.enabled .Values.service.api.enabled }}
+---
+{{- end }}
+{{- if .Values.service.api.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kubeoptix-core-ai.apiServiceName" . }}
+  namespace: {{ include "kubeoptix-core-ai.namespace" . }}
+  labels:
+    {{- include "kubeoptix-core-ai.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.api.type }}
+  selector:
+    {{- include "kubeoptix-core-ai.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.api.port }}
+      targetPort: http
+      protocol: TCP
+{{- end }}
+{{- end }}

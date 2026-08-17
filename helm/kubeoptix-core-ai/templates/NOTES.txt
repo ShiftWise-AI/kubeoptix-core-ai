@@ -1,0 +1,43 @@
+{{- if .Values.enabled }}
+KubeOptix Core AI instalado (single-instance StatefulSet).
+
+IMPORTANTE: esta aplicação é single-instance. Não escale réplicas nem configure HPA/KEDA.
+
+Release:   {{ .Release.Name }}
+Namespace: {{ include "kubeoptix-core-ai.namespace" . }}
+Imagem:    {{ include "kubeoptix-core-ai.image" . }}
+{{- if .Values.service.api.enabled }}
+
+Service API: {{ include "kubeoptix-core-ai.apiServiceName" . }} ({{ .Values.service.api.type }}, porta {{ .Values.service.api.port }})
+
+Acesso interno ao cluster:
+  http://{{ include "kubeoptix-core-ai.apiServiceName" . }}.{{ include "kubeoptix-core-ai.namespace" . }}.svc.cluster.local:{{ .Values.service.api.port }}
+
+Não há Route/Ingress exposto por este chart. Para testar localmente:
+  kubectl port-forward svc/{{ include "kubeoptix-core-ai.apiServiceName" . }} 8000:{{ .Values.service.api.port }}
+  curl http://127.0.0.1:8000/health/live
+{{- end }}
+{{- if .Values.service.headless.enabled }}
+
+Service headless: {{ include "kubeoptix-core-ai.headlessServiceName" . }} (porta {{ .Values.service.headless.port }})
+{{- end }}
+{{- if .Values.build.enabled }}
+
+Build OpenShift (BuildConfig + Containerfile):
+  oc start-build {{ include "kubeoptix-core-ai.fullname" . }} --wait -n {{ include "kubeoptix-core-ai.namespace" . }}
+{{- end }}
+{{- if .Values.persistence.enabled }}
+
+Persistência: PVC existente "{{ .Values.persistence.existingClaim }}" montado em {{ .Values.persistence.mountPath }}
+{{- if .Values.persistence.reportsPath }}
+Relatórios: {{ .Values.persistence.reportsPath }}
+{{- end }}
+{{- end }}
+{{- if .Values.probes.enabled }}
+
+Probes:
+  startup:   {{ .Values.probes.startup.path | default .Values.probes.path }}
+  liveness:  {{ .Values.probes.liveness.path | default .Values.probes.path }}
+  readiness: {{ .Values.probes.readiness.path | default .Values.probes.path }}
+{{- end }}
+{{- end }}

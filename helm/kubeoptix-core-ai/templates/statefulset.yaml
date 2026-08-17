@@ -1,0 +1,102 @@
+{{- if .Values.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "kubeoptix-core-ai.fullname" . }}
+  namespace: {{ include "kubeoptix-core-ai.namespace" . }}
+  labels:
+    {{- include "kubeoptix-core-ai.labels" . | nindent 4 }}
+  annotations:
+    kubeoptix.core-ai/single-instance: "true"
+    {{- if .Values.image.useBuildOutput }}
+    image.openshift.io/triggers: {{ printf `[{"from":{"kind":"ImageStreamTag","name":"%s:%s"},"fieldPath":"spec.template.spec.containers[?(@.name==\"api\")].image"}]` (include "kubeoptix-core-ai.imageStreamName" .) .Values.image.tag | quote }}
+    {{- end }}
+spec:
+  replicas: {{ include "kubeoptix-core-ai.replicas" . }}
+  serviceName: {{ include "kubeoptix-core-ai.headlessServiceName" . }}
+  selector:
+    matchLabels:
+      {{- include "kubeoptix-core-ai.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kubeoptix-core-ai.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "kubeoptix-core-ai.serviceAccountName" . }}
+      automountServiceAccountToken: {{ or .Values.serviceAccount.automountServiceAccountToken .Values.startup.loginWithServiceAccount }}
+      terminationGracePeriodSeconds: {{ default 30 .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: api
+          image: {{ include "kubeoptix-core-ai.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.api.targetPort }}
+              protocol: TCP
+          {{- if .Values.startup.script }}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+{{ .Values.startup.script | nindent 14 }}
+          {{- end }}
+          env:
+            {{- range $key, $value := .Values.podEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: logs
+              mountPath: /app/logs
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+            {{- end }}
+          {{- if .Values.probes.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path | default .Values.probes.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path | default .Values.probes.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          startupProbe:
+            httpGet:
+              path: {{ .Values.probes.startup.path | default .Values.probes.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.startup.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.startup.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+          {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: logs
+          emptyDir: {}
+        {{- if and .Values.persistence.enabled .Values.persistence.existingClaim }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim }}
+        {{- end }}
+{{- end }}
