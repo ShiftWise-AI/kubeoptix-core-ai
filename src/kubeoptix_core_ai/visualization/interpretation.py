@@ -22,7 +22,7 @@ def interpret_visualization(
 def _interpret_numeric(dataset: ChartDataset) -> str:
     series_names = ", ".join(s.name for s in dataset.series)
     return (
-        f"**Fato observado / valor calculado:** gráfico derivado dos Deployments e "
+        f"**Fato observado / valor calculado:** gráfico derivado dos workloads e "
         f"worknodes coletados. Séries: {series_names}. "
         f"Valores agregados do namespace são **cálculos** (soma request × réplicas). "
         f"Não confundir com uso real (PodMetrics)."

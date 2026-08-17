@@ -56,7 +56,7 @@ class ConfigMapSpec(BaseModel):
 
 
 class SecretReference(BaseModel):
-    """Referência a Secret inferida de Deployments (sem conteúdo)."""
+    """Referência a Secret inferida de workloads (sem conteúdo)."""
 
     model_config = ConfigDict(frozen=True)
 

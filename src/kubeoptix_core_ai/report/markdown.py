@@ -290,16 +290,39 @@ def _affinity_summary(workload: Workload) -> str:
 
 
 def _hpa_summary(workload: Workload) -> str:
-    if workload.hpa is None:
-        return "—"
     parts: list[str] = []
-    if workload.hpa.min_replicas is not None:
-        parts.append(f"min={workload.hpa.min_replicas}")
-    if workload.hpa.max_replicas is not None:
-        parts.append(f"max={workload.hpa.max_replicas}")
-    if workload.hpa.metrics:
-        parts.append(f"métricas: {', '.join(workload.hpa.metrics)}")
-    return ", ".join(parts) if parts else workload.hpa.name
+    if workload.hpa is not None:
+        hpa_parts: list[str] = []
+        if workload.hpa.min_replicas is not None:
+            hpa_parts.append(f"min={workload.hpa.min_replicas}")
+        if workload.hpa.max_replicas is not None:
+            hpa_parts.append(f"max={workload.hpa.max_replicas}")
+        if workload.hpa.metrics:
+            hpa_parts.append(f"métricas: {', '.join(workload.hpa.metrics)}")
+        parts.append("HPA: " + (", ".join(hpa_parts) if hpa_parts else workload.hpa.name))
+    if workload.vpa is not None:
+        mode = workload.vpa.update_mode or "—"
+        parts.append(f"VPA: {workload.vpa.name} (mode={mode})")
+    return "; ".join(parts) if parts else "—"
+
+
+def _pdb_summary(workload: Workload) -> str:
+    if workload.pdb is None:
+        return "—"
+    parts: list[str] = [workload.pdb.name]
+    if workload.pdb.min_available is not None:
+        parts.append(f"minAvailable={workload.pdb.min_available}")
+    if workload.pdb.max_unavailable is not None:
+        parts.append(f"maxUnavailable={workload.pdb.max_unavailable}")
+    return ", ".join(parts)
+
+
+def _update_strategy_summary(workload: Workload) -> str:
+    if workload.update_strategy:
+        return workload.update_strategy
+    if workload.kind == "CronJob" and workload.schedule:
+        return f"schedule={workload.schedule}"
+    return "—"
 
 
 def _container_cpu_limit_m(workload: Workload) -> str:
@@ -347,18 +370,26 @@ def _replicas_display(workload: Workload) -> str:
 def _workloads_table(workloads: tuple[Workload, ...]) -> str:
     rows: list[tuple[str, ...]] = []
     for wl in workloads:
+        config_refs = ", ".join(wl.referenced_configmaps) or "—"
+        secret_refs = ", ".join(wl.referenced_secrets) or "—"
+        pod_count = str(len(wl.placements)) if wl.placements else "—"
         rows.append(
             (
                 f"`{wl.name}`",
                 wl.kind,
                 _replicas_display(wl),
+                pod_count,
                 wl.qos_class or "—",
                 _container_cpu_request_m(wl),
                 _container_cpu_limit_m(wl),
                 _container_mem_request(wl),
                 _container_mem_limit(wl),
                 _hpa_summary(wl),
+                _pdb_summary(wl),
                 _probe_summary(wl),
+                _update_strategy_summary(wl),
+                config_refs,
+                secret_refs,
                 _selector_summary(wl),
                 _affinity_summary(wl),
             )
@@ -366,15 +397,20 @@ def _workloads_table(workloads: tuple[Workload, ...]) -> str:
     return _md_table(
         (
             "Workload",
-            "Kind",
+            "Controller",
             "Réplicas (desej./prontas)",
+            "Pods",
             "QoS",
             "CPU request/pod",
             "CPU limit/pod",
             "Mem request/pod",
             "Mem limit/pod",
-            "HPA",
+            "Autoscaling",
+            "PDB",
             "Probes",
+            "Estratégia/Schedule",
+            "ConfigMaps",
+            "Secrets",
             "Node selector",
             "Afinidade",
         ),
@@ -543,7 +579,7 @@ def _resource_balance_table(bundle: AssessmentBundle) -> str:
     ]
     intro = (
         "> Uso real é **snapshot pontual** (PodMetrics); requests/limits são "
-        "configuração declarada nos Deployments.\n\n"
+        "configuração declarada nos controllers de workload.\n\n"
     )
     return intro + _md_table(
         (
@@ -556,6 +592,16 @@ def _resource_balance_table(bundle: AssessmentBundle) -> str:
         ),
         rows,
     )
+
+
+def _workload_kinds_summary(workloads: tuple[Workload, ...]) -> str:
+    counts: dict[str, int] = {}
+    for wl in workloads:
+        counts[wl.kind] = counts.get(wl.kind, 0) + 1
+    if not counts:
+        return "_Nenhum workload identificado._\n"
+    rows = [(kind, str(count)) for kind, count in sorted(counts.items())]
+    return _md_table(("Controller", "Quantidade"), rows)
 
 
 def _workloads_summary_table(workloads: tuple[Workload, ...]) -> str:
@@ -965,14 +1011,14 @@ def _configmaps_table(
         keys = ", ".join(cm.keys) if cm.keys else "—"
         rows.append((f"`{cm.name}`", keys, consumed, cm.app_group or "—"))
     return _md_table(
-        ("ConfigMap", "Chaves", "Consumido por Deployment?", "App group"),
+        ("ConfigMap", "Chaves", "Consumido por workload?", "App group"),
         rows,
     )
 
 
 def _secrets_table(refs: tuple[SecretReference, ...]) -> str:
     if not refs:
-        return "_Nenhuma referência a Secret encontrada nos Deployments analisados._\n"
+        return "_Nenhuma referência a Secret encontrada nos workloads analisados._\n"
     rows: list[tuple[str, ...]] = []
     for ref in refs:
         rows.append((f"`{ref.name}`", ref.usage, f"`{ref.workload}`"))
@@ -1151,19 +1197,26 @@ class MarkdownReportGenerator:
         sections.extend(["", "---", "", "## 4. Fontes de dados", ""])
         sections.append(
             "Tipos de artefato considerados nesta execução:\n\n"
-            "- Deployments (`apps/*/deployments/*.yaml`)\n"
-            "- HPAs (`apps/*/hpa/*.yaml`)\n"
+            "- Workloads: Deployment, StatefulSet, DaemonSet, DeploymentConfig, "
+            "Job, CronJob, ReplicationController\n"
             "- Pods (`resources/pods/*.yaml`)\n"
+            "- Autoscaling: HPA, VPA (`apps/*/hpa|vpa/` ou `resources/`)\n"
+            "- PDB (`apps/*/pdb/` ou `resources/poddisruptionbudgets.policy/`)\n"
             "- PodMetrics (`resources/pods.metrics.k8s.io/*.yaml`)\n"
             "- PVCs (`resources/persistentvolumeclaims/*.yaml`)\n"
             "- Services (`resources/services/`, `apps/*/services/`)\n"
             "- Routes (`resources/routes.route.openshift.io/`, `apps/*/routes/`)\n"
             "- ConfigMaps (`resources/configmaps/`, `apps/*/configmaps/`)\n"
+            "- Secrets (referências por nome nos workloads)\n"
             "- ClusterServiceVersions / PackageManifests (OLM)\n"
             "- Logs de pods (`apps/*/pod-logs/*.log`)\n"
             "- Worknodes (`worknodes/*.yaml`)\n\n"
+            "**Correlação:** pods são associados ao controller canônico via "
+            "ownerReferences (Pod → ReplicaSet → Deployment, Pod → StatefulSet, "
+            "Job → CronJob, etc.). ReplicaSets históricos não geram workloads "
+            "duplicados.\n\n"
             "**Não analisados nesta versão:** conteúdo de Secrets (apenas referências "
-            "por nome nos Deployments), eventos, NetworkPolicies, séries temporais."
+            "por nome), eventos, NetworkPolicies, séries temporais."
         )
         if diag.processed_files:
             sections.append("\nArquivos processados (amostra):\n")
@@ -1210,7 +1263,9 @@ class MarkdownReportGenerator:
                 _section_findings(inventory_findings, "Findings de inventário / observabilidade:")
             )
 
-        sections.append("\n### Workloads em execução (Deployments)\n")
+        sections.append("\n### Workloads consolidados (todos os controllers)\n")
+        sections.append(_workload_kinds_summary(ctx.workloads))
+        sections.append("\n### Detalhamento por workload\n")
         sections.append(_workloads_table(ctx.workloads))
         sections.append("\n### Placement observado\n")
         sections.append(_placement_table(ctx.workloads, ctx.nodes))
@@ -1238,7 +1293,7 @@ class MarkdownReportGenerator:
         sections.append("### Configuração (request/limit)\n")
         sections.append(
             "Valores de **request** e **limit** abaixo são configurados nos "
-            "Deployments — não representam uso real.\n"
+            "controllers de workload — não representam uso real.\n"
         )
         cpu_rows: list[tuple[str, ...]] = []
         for wl in ctx.workloads:

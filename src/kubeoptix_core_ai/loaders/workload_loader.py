@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from kubeoptix_core_ai.config import AnalyzerConfig
 from kubeoptix_core_ai.discovery.scanner import discover_namespace
 from kubeoptix_core_ai.errors import ConfigurationError, ParseError
+from kubeoptix_core_ai.loaders.workload_correlation import (
+    build_replicaset_index,
+    correlate_autoscalers,
+    correlate_metrics_by_workload,
+    correlate_pdbs,
+    correlate_pod_placements,
+    enrich_workloads_with_correlations,
+    filter_canonical_workloads,
+)
 from kubeoptix_core_ai.logging import get_logger
 from kubeoptix_core_ai.models.inventory import (
     ConfigMapSpec,
@@ -15,18 +26,31 @@ from kubeoptix_core_ai.models.inventory import (
     ServiceSpec,
 )
 from kubeoptix_core_ai.models.metrics import PodMetricsSnapshot
-from kubeoptix_core_ai.models.workload import HPASpec, NamespaceWorkloadBundle, PodPlacement, Workload
+from kubeoptix_core_ai.models.workload import (
+    HPASpec,
+    NamespaceWorkloadBundle,
+    PDBSpec,
+    PodPlacement,
+    VPASpec,
+    Workload,
+)
+from kubeoptix_core_ai.normalize.ownership import (
+    resolve_workload_from_owner,
+    workload_name_from_pod,
+)
 from kubeoptix_core_ai.normalize.workload import enrich_workload
 from kubeoptix_core_ai.parsers.configmap import parse_configmap
 from kubeoptix_core_ai.parsers.csv import parse_clusterserviceversion, parse_packagemanifest
-from kubeoptix_core_ai.parsers.deployment import parse_deployment
 from kubeoptix_core_ai.parsers.hpa import parse_hpa
 from kubeoptix_core_ai.parsers.log import parse_pod_log
+from kubeoptix_core_ai.parsers.pdb import parse_pdb
 from kubeoptix_core_ai.parsers.pod import parse_pod
 from kubeoptix_core_ai.parsers.pod_metrics import parse_pod_metrics
 from kubeoptix_core_ai.parsers.pvc import parse_pvc
 from kubeoptix_core_ai.parsers.route import parse_route
 from kubeoptix_core_ai.parsers.service import parse_service
+from kubeoptix_core_ai.parsers.vpa import parse_vpa
+from kubeoptix_core_ai.parsers.workload_controller import parse_workload_controller
 
 logger = get_logger("loaders.workload")
 
@@ -50,82 +74,43 @@ class WorkloadLoader:
         skipped_files: list[str] = []
         processed_files: list[str] = []
 
-        hpa_by_target: dict[str, HPASpec] = {}
-        for hpa_file in paths.hpa_files:
-            try:
-                hpa = parse_hpa(hpa_file)
-                processed_files.append(str(hpa_file))
-                if hpa.target_workload_name:
-                    hpa_by_target[hpa.target_workload_name] = hpa
-            except ParseError as exc:
-                msg = str(exc)
-                parse_errors.append(msg)
-                logger.warning("Falha ao parsear HPA %s: %s", hpa_file, msg)
+        raw_workloads = self._load_workload_controllers(
+            paths, parse_errors, processed_files
+        )
+        rs_index = build_replicaset_index(raw_workloads)
 
-        placements_by_workload: dict[str, list[PodPlacement]] = {}
-        qos_by_workload: dict[str, str] = {}
-        for pod_file in paths.pod_files:
-            try:
-                placement = parse_pod(pod_file)
-                processed_files.append(str(pod_file))
-                workload_name = placement.workload_name or placement.pod_name
-                placements_by_workload.setdefault(workload_name, []).append(placement)
-                if placement.qos_class and workload_name not in qos_by_workload:
-                    qos_by_workload[workload_name] = placement.qos_class
-            except ParseError as exc:
-                msg = str(exc)
-                parse_errors.append(msg)
-                logger.warning("Falha ao parsear Pod %s: %s", pod_file, msg)
+        hpas, vpas, pdbs = self._load_operational_resources(
+            paths, parse_errors, processed_files
+        )
+        hpa_by_target, vpa_by_target = correlate_autoscalers(hpas, vpas)
 
-        metrics_by_workload: dict[str, list[PodMetricsSnapshot]] = {}
-        for metrics_file in paths.pod_metrics_files:
-            try:
-                snapshot = parse_pod_metrics(metrics_file)
-                processed_files.append(str(metrics_file))
-                workload_key = _workload_name_from_pod(snapshot.pod_name)
-                metrics_by_workload.setdefault(workload_key, []).append(snapshot)
-            except ParseError as exc:
-                msg = str(exc)
-                parse_errors.append(msg)
-                logger.warning("Falha ao parsear PodMetrics %s: %s", metrics_file, msg)
+        placements, qos_by_workload = self._load_pods(
+            paths, rs_index, parse_errors, processed_files
+        )
+        placements_by_workload = correlate_pod_placements(placements)
 
-        workloads: list[Workload] = []
-        for deployment_file in paths.deployment_files:
-            app_group = deployment_file.parent.parent.name
-            try:
-                workload = parse_deployment(deployment_file, app_group=app_group)
-                processed_files.append(str(deployment_file))
-                workload = workload.model_copy(
-                    update={
-                        "hpa": hpa_by_target.get(workload.name),
-                        "placements": tuple(placements_by_workload.get(workload.name, ())),
-                        "metrics": tuple(metrics_by_workload.get(workload.name, ())),
-                        "qos_class": qos_by_workload.get(workload.name),
-                    }
-                )
-                workloads.append(enrich_workload(workload))
-            except ParseError as exc:
-                msg = str(exc)
-                parse_errors.append(msg)
-                logger.warning(
-                    "Falha ao parsear Deployment %s: %s", deployment_file, msg
-                )
+        metrics_by_workload = self._load_pod_metrics(
+            paths, placements, parse_errors, processed_files
+        )
 
-        if not paths.deployment_files:
-            logger.info("Nenhum Deployment encontrado em %s", namespace_root)
+        canonical = filter_canonical_workloads(raw_workloads)
+        pdb_by_workload = correlate_pdbs(pdbs, canonical)
 
-        pvcs: list = []
-        pvc_dir = namespace_root / "resources" / "persistentvolumeclaims"
-        if pvc_dir.is_dir():
-            for pvc_file in sorted(pvc_dir.glob("*.yaml")):
-                try:
-                    pvcs.append(parse_pvc(pvc_file))
-                    processed_files.append(str(pvc_file))
-                except ParseError as exc:
-                    msg = str(exc)
-                    parse_errors.append(msg)
-                    logger.warning("Falha ao parsear PVC %s: %s", pvc_file, msg)
+        workloads = enrich_workloads_with_correlations(
+            canonical,
+            placements_by_workload,
+            metrics_by_workload,
+            qos_by_workload,
+            hpa_by_target,
+            vpa_by_target,
+            pdb_by_workload,
+        )
+        workloads = [enrich_workload(w) for w in workloads]
 
+        if not canonical and not raw_workloads:
+            logger.info("Nenhum workload controller encontrado em %s", namespace_root)
+
+        pvcs = self._load_pvcs(namespace_root, parse_errors, processed_files)
         services, routes, configmaps, operators, pod_logs = _load_inventory_resources(
             paths, parse_errors, processed_files, logger
         )
@@ -145,6 +130,176 @@ class WorkloadLoader:
             pod_logs=pod_logs,
             secret_references=secret_references,
         )
+
+    def _load_workload_controllers(
+        self,
+        paths,
+        parse_errors: list[str],
+        processed_files: list[str],
+    ) -> list[Workload]:
+        workloads: list[Workload] = []
+        for workload_file in paths.workload_files:
+            app_group = _app_group_from_path(workload_file)
+            try:
+                workload = parse_workload_controller(workload_file, app_group=app_group)
+                processed_files.append(str(workload_file))
+                workloads.append(workload)
+            except ParseError as exc:
+                msg = str(exc)
+                parse_errors.append(msg)
+                logger.warning(
+                    "Falha ao parsear workload %s: %s", workload_file, msg
+                )
+        return workloads
+
+    def _load_operational_resources(
+        self,
+        paths,
+        parse_errors: list[str],
+        processed_files: list[str],
+    ) -> tuple[list[HPASpec], list[VPASpec], list[PDBSpec]]:
+        hpas: list[HPASpec] = []
+        for hpa_file in paths.hpa_files:
+            try:
+                hpas.append(parse_hpa(hpa_file))
+                processed_files.append(str(hpa_file))
+            except ParseError as exc:
+                msg = str(exc)
+                parse_errors.append(msg)
+                logger.warning("Falha ao parsear HPA %s: %s", hpa_file, msg)
+
+        vpas: list[VPASpec] = []
+        for vpa_file in paths.vpa_files:
+            try:
+                vpas.append(parse_vpa(vpa_file))
+                processed_files.append(str(vpa_file))
+            except ParseError as exc:
+                msg = str(exc)
+                parse_errors.append(msg)
+                logger.warning("Falha ao parsear VPA %s: %s", vpa_file, msg)
+
+        pdbs: list[PDBSpec] = []
+        for pdb_file in paths.pdb_files:
+            try:
+                pdbs.append(parse_pdb(pdb_file))
+                processed_files.append(str(pdb_file))
+            except ParseError as exc:
+                msg = str(exc)
+                parse_errors.append(msg)
+                logger.warning("Falha ao parsear PDB %s: %s", pdb_file, msg)
+
+        return hpas, vpas, pdbs
+
+    def _load_pods(
+        self,
+        paths,
+        rs_index,
+        parse_errors: list[str],
+        processed_files: list[str],
+    ) -> tuple[list[PodPlacement], dict[str, str]]:
+        placements: list[PodPlacement] = []
+        qos_by_workload: dict[str, str] = {}
+
+        for pod_file in paths.pod_files:
+            try:
+                placement = parse_pod(pod_file)
+                processed_files.append(str(pod_file))
+
+                workload_name = placement.workload_name
+                if workload_name is None:
+                    workload_name = _resolve_pod_workload_from_file(pod_file, rs_index)
+
+                if workload_name:
+                    placement = placement.model_copy(update={"workload_name": workload_name})
+
+                placements.append(placement)
+                if placement.qos_class and workload_name and workload_name not in qos_by_workload:
+                    qos_by_workload[workload_name] = placement.qos_class
+            except ParseError as exc:
+                msg = str(exc)
+                parse_errors.append(msg)
+                logger.warning("Falha ao parsear Pod %s: %s", pod_file, msg)
+
+        return placements, qos_by_workload
+
+    def _load_pod_metrics(
+        self,
+        paths,
+        placements: list[PodPlacement],
+        parse_errors: list[str],
+        processed_files: list[str],
+    ) -> dict[str, list[PodMetricsSnapshot]]:
+        metrics_by_pod: dict[str, list[PodMetricsSnapshot]] = {}
+        for metrics_file in paths.pod_metrics_files:
+            try:
+                snapshot = parse_pod_metrics(metrics_file)
+                processed_files.append(str(metrics_file))
+                metrics_by_pod.setdefault(snapshot.pod_name, []).append(snapshot)
+            except ParseError as exc:
+                msg = str(exc)
+                parse_errors.append(msg)
+                logger.warning("Falha ao parsear PodMetrics %s: %s", metrics_file, msg)
+
+        return correlate_metrics_by_workload(metrics_by_pod, placements)
+
+    def _load_pvcs(
+        self,
+        namespace_root: Path,
+        parse_errors: list[str],
+        processed_files: list[str],
+    ) -> list:
+        pvcs: list = []
+        pvc_dir = namespace_root / "resources" / "persistentvolumeclaims"
+        if pvc_dir.is_dir():
+            for pvc_file in sorted(pvc_dir.glob("*.yaml")):
+                try:
+                    pvcs.append(parse_pvc(pvc_file))
+                    processed_files.append(str(pvc_file))
+                except ParseError as exc:
+                    msg = str(exc)
+                    parse_errors.append(msg)
+                    logger.warning("Falha ao parsear PVC %s: %s", pvc_file, msg)
+        return pvcs
+
+
+def _app_group_from_path(file_path: Path) -> str | None:
+    parts = file_path.parts
+    if "apps" in parts:
+        try:
+            apps_idx = parts.index("apps")
+            if apps_idx + 1 < len(parts):
+                app_group = parts[apps_idx + 1]
+                if app_group != "__sem_app__":
+                    return app_group
+        except ValueError:
+            pass
+    return None
+
+
+def _resolve_pod_workload_from_file(pod_file: Path, rs_index) -> str | None:
+    """Re-parse ownerReferences com índice de ReplicaSets para correlação."""
+    from kubeoptix_core_ai.parsers.base import load_yaml_file
+
+    try:
+        document = load_yaml_file(pod_file)
+    except ParseError:
+        return None
+
+    metadata = document.get("metadata") or {}
+    pod_name = str(metadata.get("name", pod_file.stem))
+
+    for owner in metadata.get("ownerReferences") or []:
+        if not isinstance(owner, dict):
+            continue
+        kind = str(owner.get("kind", ""))
+        name = str(owner.get("name", ""))
+        if not kind or not name:
+            continue
+        resolved = resolve_workload_from_owner(kind, name, rs_index)
+        if resolved:
+            return resolved[0]
+
+    return workload_name_from_pod(pod_name)
 
 
 def _load_inventory_resources(
@@ -181,16 +336,7 @@ def _load_inventory_resources(
 
     configmaps: list[ConfigMapSpec] = []
     for cm_file in paths.configmap_files:
-        app_group = None
-        if "apps" in cm_file.parts:
-            try:
-                apps_idx = cm_file.parts.index("apps")
-                if apps_idx + 1 < len(cm_file.parts):
-                    app_group = cm_file.parts[apps_idx + 1]
-                    if app_group == "__sem_app__":
-                        app_group = None
-            except ValueError:
-                pass
+        app_group = _app_group_from_path(cm_file)
         try:
             configmaps.append(parse_configmap(cm_file, app_group=app_group))
             processed_files.append(str(cm_file))
@@ -291,15 +437,3 @@ def _build_secret_references(workloads: list[Workload]) -> tuple[SecretReference
                     )
                 )
     return tuple(sorted(refs, key=lambda r: (r.name, r.workload)))
-
-
-def _workload_name_from_pod(pod_name: str) -> str:
-    """
-    Extrai nome provável do workload a partir do nome do pod.
-
-    Padrão observado: <deployment>-<replicaset-hash>-<pod-suffix>
-    """
-    parts = pod_name.split("-")
-    if len(parts) >= 3:
-        return "-".join(parts[:-2])
-    return pod_name

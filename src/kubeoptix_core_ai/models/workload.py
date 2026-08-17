@@ -54,7 +54,28 @@ class HPASpec(BaseModel):
     min_replicas: int | None = None
     max_replicas: int | None = None
     target_workload_name: str | None = None
+    target_workload_kind: str | None = None
     metrics: list[str] = Field(default_factory=list)
+    source: DataSourceRef
+
+
+class VPASpec(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    target_workload_name: str | None = None
+    target_workload_kind: str | None = None
+    update_mode: str | None = None
+    source: DataSourceRef
+
+
+class PDBSpec(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    min_available: str | int | None = None
+    max_unavailable: str | int | None = None
+    selector: dict[str, str] = Field(default_factory=dict)
     source: DataSourceRef
 
 
@@ -86,6 +107,11 @@ class Workload(BaseModel):
     topology_spread_constraints: list[dict] | None = None
     qos_class: str | None = None
     hpa: HPASpec | None = None
+    vpa: VPASpec | None = None
+    pdb: PDBSpec | None = None
+    update_strategy: str | None = None
+    schedule: str | None = None
+    parent_cronjob: str | None = None
     placements: tuple[PodPlacement, ...] = ()
     metrics: tuple[PodMetricsSnapshot, ...] = ()
     volumes: tuple[VolumeSpec, ...] = ()

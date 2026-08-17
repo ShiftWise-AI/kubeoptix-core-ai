@@ -250,7 +250,7 @@ def build_all_visualizations(bundle: AssessmentBundle) -> VisualizationBundle:
             specs.append(_spec_from_numeric(viz_id, "cpu", chart))
         else:
             specs.append(
-                _unavailable(viz_id, title, question, "cpu", "Valores de CPU não disponíveis nos Deployments.")
+                _unavailable(viz_id, title, question, "cpu", "Valores de CPU não disponíveis nos workloads.")
             )
 
     # §7 — memória
@@ -264,7 +264,7 @@ def build_all_visualizations(bundle: AssessmentBundle) -> VisualizationBundle:
             specs.append(_spec_from_numeric(viz_id, "memory", chart))
         else:
             specs.append(
-                _unavailable(viz_id, title, question, "memory", "Valores de memória não disponíveis nos Deployments.")
+                _unavailable(viz_id, title, question, "memory", "Valores de memória não disponíveis nos workloads.")
             )
 
     # §8 — QoS

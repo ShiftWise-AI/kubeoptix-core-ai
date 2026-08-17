@@ -20,7 +20,7 @@ def selector_matches_labels(selector: dict[str, str], labels: dict[str, str]) ->
 
 
 def workload_pod_labels(workload: Workload) -> dict[str, str]:
-    """Labels usados para matching Service→Pod (template do Deployment)."""
+    """Labels usados para matching Service→Pod (template do controller)."""
     if workload.pod_template_labels:
         return dict(workload.pod_template_labels)
     return dict(workload.match_labels)

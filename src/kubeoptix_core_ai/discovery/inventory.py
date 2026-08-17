@@ -83,7 +83,19 @@ def _is_processable_file(path: Path, namespace_root: Path) -> bool:
     if parts[0] == "apps":
         if parts[1] in IGNORED_APP_DIRS:
             return False
-        if len(parts) >= 4 and parts[2] in ("deployments", "hpa") and path.suffix.lower() in (
+        processable_app_subdirs = (
+            "deployments",
+            "statefulsets",
+            "daemonsets",
+            "deploymentconfigs",
+            "jobs",
+            "cronjobs",
+            "replicationcontrollers",
+            "hpa",
+            "vpa",
+            "pdb",
+        )
+        if len(parts) >= 4 and parts[2] in processable_app_subdirs and path.suffix.lower() in (
             ".yaml",
             ".yml",
         ):
@@ -105,13 +117,28 @@ def _is_processable_file(path: Path, namespace_root: Path) -> bool:
             ".yml",
         ):
             return True
-        if parts[1] in (
+        processable_resource_dirs = (
             "services",
             "configmaps",
+            "secrets",
             "routes.route.openshift.io",
             "clusterserviceversions.operators.coreos.com",
             "packagemanifests.packages.operators.coreos.com",
-        ) and path.suffix.lower() in (".yaml", ".yml"):
+            "deployments.apps",
+            "statefulsets.apps",
+            "daemonsets.apps",
+            "deploymentconfigs.apps.openshift.io",
+            "jobs.batch",
+            "cronjobs.batch",
+            "replicationcontrollers",
+            "horizontalpodautoscalers.autoscaling",
+            "verticalpodautoscalers.autoscaling.k8s.io",
+            "poddisruptionbudgets.policy",
+        )
+        if parts[1] in processable_resource_dirs and path.suffix.lower() in (
+            ".yaml",
+            ".yml",
+        ):
             return True
 
     return False

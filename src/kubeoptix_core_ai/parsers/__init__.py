@@ -5,6 +5,7 @@ from kubeoptix_core_ai.parsers.hpa import parse_hpa
 from kubeoptix_core_ai.parsers.node import parse_node
 from kubeoptix_core_ai.parsers.pod import parse_pod
 from kubeoptix_core_ai.parsers.pod_metrics import parse_pod_metrics
+from kubeoptix_core_ai.parsers.workload_controller import parse_workload_controller
 
 __all__ = [
     "parse_deployment",
@@ -12,4 +13,5 @@ __all__ = [
     "parse_node",
     "parse_pod",
     "parse_pod_metrics",
+    "parse_workload_controller",
 ]

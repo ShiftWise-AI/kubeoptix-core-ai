@@ -102,7 +102,7 @@ def _workload_node(wl: Workload) -> DiagramNode:
     return DiagramNode(
         id=f"wl_{wl.name}",
         node_type="workload",
-        label=f"Deployment/{wl.name}",
+        label=f"{wl.kind}/{wl.name}",
         provenance=(from_source(wl.source),),
     )
 

@@ -63,14 +63,14 @@ def analyze_inventory(ctx: AnalysisContext, builder: FindingBuilder) -> None:
             namespace=namespace,
             evidence=(
                 EvidenceItem(
-                    description="ConfigMap sem referência em Deployments",
+                    description="ConfigMap sem referência em workloads",
                     value=f"keys={list(cm.keys)}",
                     file_path=cm.source.file_path,
                 ),
             ),
             analysis=(
                 f"ConfigMap `{cm.name}` não é referenciado por envFrom, volume ou "
-                "env valueFrom nos Deployments analisados."
+                "env valueFrom nos workloads analisados."
             ),
             recommendation=(
                 "Remover se órfão ou referenciar explicitamente em envFrom/volumeMounts."
