@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from kubeoptix_core_ai.discovery.scanner import IGNORED_APP_DIRS, IGNORED_RESOURCE_PREFIXES
+from kubeoptix_core_ai.discovery.apps import IGNORED_APP_DIRS
+from kubeoptix_core_ai.discovery.scanner import IGNORED_RESOURCE_PREFIXES
 
 # Extensões consideradas na contagem de arquivos encontrados
 COUNTED_EXTENSIONS = frozenset({".yaml", ".yml", ".log"})
@@ -91,6 +92,12 @@ def _is_processable_file(path: Path, namespace_root: Path) -> bool:
             "jobs",
             "cronjobs",
             "replicationcontrollers",
+            "pods",
+            "pods.metrics.k8s.io",
+            "pod-metrics",
+            "persistentvolumeclaims",
+            "pvc",
+            "secrets",
             "hpa",
             "vpa",
             "pdb",

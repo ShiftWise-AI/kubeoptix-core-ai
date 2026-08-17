@@ -110,7 +110,7 @@ class WorkloadLoader:
         if not canonical and not raw_workloads:
             logger.info("Nenhum workload controller encontrado em %s", namespace_root)
 
-        pvcs = self._load_pvcs(namespace_root, parse_errors, processed_files)
+        pvcs = self._load_pvcs(paths, parse_errors, processed_files)
         services, routes, configmaps, operators, pod_logs = _load_inventory_resources(
             paths, parse_errors, processed_files, logger
         )
@@ -244,21 +244,19 @@ class WorkloadLoader:
 
     def _load_pvcs(
         self,
-        namespace_root: Path,
+        paths,
         parse_errors: list[str],
         processed_files: list[str],
     ) -> list:
         pvcs: list = []
-        pvc_dir = namespace_root / "resources" / "persistentvolumeclaims"
-        if pvc_dir.is_dir():
-            for pvc_file in sorted(pvc_dir.glob("*.yaml")):
-                try:
-                    pvcs.append(parse_pvc(pvc_file))
-                    processed_files.append(str(pvc_file))
-                except ParseError as exc:
-                    msg = str(exc)
-                    parse_errors.append(msg)
-                    logger.warning("Falha ao parsear PVC %s: %s", pvc_file, msg)
+        for pvc_file in paths.pvc_files:
+            try:
+                pvcs.append(parse_pvc(pvc_file))
+                processed_files.append(str(pvc_file))
+            except ParseError as exc:
+                msg = str(exc)
+                parse_errors.append(msg)
+                logger.warning("Falha ao parsear PVC %s: %s", pvc_file, msg)
         return pvcs
 
 
