@@ -39,14 +39,21 @@ helm template kubeoptix-core-ai ./helm/kubeoptix-core-ai -f ./my-values.yaml
 ./install.sh -f ./my-values.yaml
 ```
 
-O `install.sh` instala sempre no namespace `shiftwise-ai`.
+O `install.sh` instala sempre no namespace `shiftwise-ai` e dispara `oc start-build` quando o chart cria um BuildConfig.
 
 ## Build da imagem (OpenShift)
 
-O projeto usa **Containerfile** (UBI 10). Com `build.enabled=true` e `image.useBuildOutput=true`, o StatefulSet consome o ImageStream gerado pelo BuildConfig:
+O projeto usa **Containerfile** (UBI 10). Com `build.enabled=true`, o chart cria `BuildConfig` + `ImageStream` e o `install.sh` executa o build automaticamente:
+
+```bash
+./install.sh -f ./my-values.yaml
+```
+
+Para rebuild manual:
 
 ```bash
 oc start-build kubeoptix-core-ai --wait -n shiftwise-ai
+oc rollout restart statefulset/kubeoptix-core-ai -n shiftwise-ai
 ```
 
 ## Variáveis de ambiente (`podEnv`)

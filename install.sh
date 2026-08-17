@@ -103,6 +103,25 @@ done
 echo "Instalando release ${RELEASE} no namespace ${NAMESPACE}..."
 helm "${HELM_ARGS[@]}"
 
+BC_NAME="${RELEASE}"
+if oc get buildconfig "${BC_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1; then
+  echo
+  echo "Iniciando build OpenShift (${BC_NAME})..."
+  if ! oc start-build "${BC_NAME}" --wait -n "${NAMESPACE}"; then
+    BUILD_NUM="$(oc get buildconfig "${BC_NAME}" -n "${NAMESPACE}" -o jsonpath='{.status.lastVersion}')"
+    echo "Build falhou (build/${BC_NAME}-${BUILD_NUM}). Últimos logs:" >&2
+    oc logs -n "${NAMESPACE}" "build/${BC_NAME}-${BUILD_NUM}" --tail=50 2>/dev/null || true
+    exit 1
+  fi
+  echo "Build concluído."
+
+  if oc get statefulset "${RELEASE}" -n "${NAMESPACE}" >/dev/null 2>&1; then
+    echo "Reiniciando StatefulSet para carregar a nova imagem..."
+    oc rollout restart "statefulset/${RELEASE}" -n "${NAMESPACE}"
+    oc rollout status "statefulset/${RELEASE}" -n "${NAMESPACE}" --timeout=180s
+  fi
+fi
+
 echo
 echo "Artefatos criados:"
 oc get statefulset,svc,bc,is -n "${NAMESPACE}" -l "app.kubernetes.io/instance=${RELEASE}" 2>/dev/null \

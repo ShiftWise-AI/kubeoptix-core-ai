@@ -23,7 +23,7 @@ Service headless: {{ include "kubeoptix-core-ai.headlessServiceName" . }} (porta
 {{- end }}
 {{- if .Values.build.enabled }}
 
-Build OpenShift (BuildConfig + Containerfile):
+Build OpenShift: o install.sh dispara automaticamente:
   oc start-build {{ include "kubeoptix-core-ai.fullname" . }} --wait -n {{ include "kubeoptix-core-ai.namespace" . }}
 {{- end }}
 {{- if .Values.persistence.enabled }}

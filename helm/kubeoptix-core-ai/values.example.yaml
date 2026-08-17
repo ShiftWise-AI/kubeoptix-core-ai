@@ -25,7 +25,7 @@ build:
   enabled: true
   git:
     uri: https://github.com/ShiftWise-AI/kubeoptix-core-ai.git
-    ref: main
+    ref: feature/ocp
     sourceSecret: github-auth
   dockerfilePath: Containerfile
   resources:
