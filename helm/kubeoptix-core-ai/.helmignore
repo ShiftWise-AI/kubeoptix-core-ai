@@ -18,7 +18,7 @@ env/
 .pytest_cache/
 *.log
 
-# Ignore Podman / Docker files
+# Ignore container build context (build via OpenShift BuildConfig)
 Dockerfile
 Containerfile
 .podmanignore

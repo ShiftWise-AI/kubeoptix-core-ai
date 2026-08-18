@@ -5,22 +5,33 @@ from __future__ import annotations
 from pathlib import Path
 
 from kubeoptix_core_ai.errors import ParseError
+from kubeoptix_core_ai.normalize.ownership import (
+    infer_deployment_from_replicaset_name,
+    resolve_workload_from_owner,
+)
 from kubeoptix_core_ai.models.source import source_from_document
 from kubeoptix_core_ai.models.workload import PodPlacement
 from kubeoptix_core_ai.parsers.base import load_yaml_file
 
 
 def _owner_workload_name(document: dict) -> str | None:
-    for owner in document.get("metadata", {}).get("ownerReferences") or []:
+    owners = document.get("metadata", {}).get("ownerReferences") or []
+    for owner in owners:
         if not isinstance(owner, dict):
             continue
-        if owner.get("kind") in ("ReplicaSet", "Deployment"):
-            rs_name = str(owner.get("name", ""))
-            # ReplicaSet name: <deployment>-<hash>
-            parts = rs_name.rsplit("-", 1)
-            if len(parts) == 2 and parts[1].isalnum():
-                return parts[0]
-            return rs_name or None
+        if not owner.get("controller", True):
+            continue
+        kind = str(owner.get("kind", ""))
+        name = str(owner.get("name", ""))
+        if not kind or not name:
+            continue
+        resolved = resolve_workload_from_owner(kind, name, {})
+        if resolved:
+            return resolved[0]
+        if kind == "ReplicaSet":
+            inferred = infer_deployment_from_replicaset_name(name)
+            return inferred or name
+        return name
     return None
 
 

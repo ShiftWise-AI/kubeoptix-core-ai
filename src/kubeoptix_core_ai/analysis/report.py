@@ -7,8 +7,9 @@ from kubeoptix_core_ai.models.finding import AnalysisReport, Finding
 
 def format_finding(finding: Finding) -> str:
     lines = [
-        f"### {finding.id} — [{finding.category}]",
+        f"### {finding.id}",
         "",
+        f"**Categoria:** {finding.category}",
         f"**Severidade:** {finding.severity.value}",
         f"**Confiança:** {finding.confidence.value}",
     ]

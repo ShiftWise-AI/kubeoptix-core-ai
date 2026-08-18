@@ -1,0 +1,43 @@
+{{- if and .Values.enabled .Values.build.enabled }}
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: {{ include "kubeoptix-core-ai.imageStreamName" . }}
+  namespace: {{ include "kubeoptix-core-ai.namespace" . }}
+  labels:
+    {{- include "kubeoptix-core-ai.labels" . | nindent 4 }}
+spec:
+  lookupPolicy:
+    local: true
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: {{ include "kubeoptix-core-ai.fullname" . }}
+  namespace: {{ include "kubeoptix-core-ai.namespace" . }}
+  labels:
+    {{- include "kubeoptix-core-ai.labels" . | nindent 4 }}
+spec:
+  source:
+    type: Git
+    git:
+      uri: {{ required "build.git.uri é obrigatório quando build.enabled=true" .Values.build.git.uri | quote }}
+      ref: {{ .Values.build.git.ref | quote }}
+    sourceSecret:
+      name: {{ required "build.git.sourceSecret é obrigatório quando build.enabled=true" .Values.build.git.sourceSecret }}
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: {{ default "Containerfile" .Values.build.dockerfilePath }}
+  output:
+    to:
+      kind: ImageStreamTag
+      name: {{ printf "%s:%s" (include "kubeoptix-core-ai.imageStreamName" .) .Values.image.tag }}
+  {{- with .Values.build.resources }}
+  resources:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  triggers:
+    - type: ConfigChange
+    - type: ImageChange
+{{- end }}

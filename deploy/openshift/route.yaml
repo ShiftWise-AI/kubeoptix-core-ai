@@ -1,0 +1,18 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: kubeoptix-core-ai-api
+  labels:
+    app.kubernetes.io/name: kubeoptix-core-ai-api
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: kubeoptix-core-ai
+spec:
+  to:
+    kind: Service
+    name: kubeoptix-core-ai-api
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

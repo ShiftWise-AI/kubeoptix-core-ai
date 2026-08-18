@@ -36,6 +36,9 @@ def parse_hpa(file_path: Path) -> HPASpec:
     target_workload_name = target_ref.get("name")
     if target_workload_name is not None:
         target_workload_name = str(target_workload_name)
+    target_workload_kind = target_ref.get("kind")
+    if target_workload_kind is not None:
+        target_workload_kind = str(target_workload_kind)
 
     metric_descriptions: list[str] = []
     for metric in spec.get("metrics") or []:
@@ -59,6 +62,7 @@ def parse_hpa(file_path: Path) -> HPASpec:
         min_replicas=min_replicas,
         max_replicas=max_replicas,
         target_workload_name=target_workload_name,
+        target_workload_kind=target_workload_kind,
         metrics=metric_descriptions,
         source=source,
     )

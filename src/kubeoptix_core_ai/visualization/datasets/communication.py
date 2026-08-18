@@ -56,7 +56,7 @@ def _external_client_node(route: RouteSpec) -> DiagramNode:
     return DiagramNode(
         id=f"ext_{route.name}",
         node_type="external",
-        label=f"Cliente externo<br/>{host}",
+        label=f"Cliente externo / {host}",
         provenance=(from_source(route.source, field_path="spec.host"),),
     )
 
@@ -72,7 +72,7 @@ def _router_node(route: RouteSpec) -> DiagramNode | None:
     return DiagramNode(
         id=f"router_{route.name}",
         node_type="route",
-        label="<br/>".join(label_parts),
+        label=" / ".join(label_parts),
         provenance=(
             from_source(route.source, field_path="status.ingress[0].routerName"),
         ),
@@ -102,7 +102,7 @@ def _workload_node(wl: Workload) -> DiagramNode:
     return DiagramNode(
         id=f"wl_{wl.name}",
         node_type="workload",
-        label=f"Deployment/{wl.name}",
+        label=f"{wl.kind}/{wl.name}",
         provenance=(from_source(wl.source),),
     )
 
@@ -329,10 +329,10 @@ def build_external_dependencies_diagrams(
             registry = _image_registry(container.image)
             if registry:
                 node_id = f"reg_{wl.name}_{registry.replace('.', '_').replace(':', '_')}"
-                node_label = f"Registry<br/>{registry}"
+                node_label = f"Registry / {registry}"
             else:
                 node_id = f"img_{wl.name}_{container.name}"
-                node_label = f"Image<br/>{container.image[:48]}"
+                node_label = f"Image / {container.image[:48]}"
             if node_id not in seen:
                 nodes.append(
                     DiagramNode(

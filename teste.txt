@@ -1,0 +1,173 @@
+# =============================================================================
+# KubeOptix Core AI — comandos curl para testes da API
+# =============================================================================
+#
+# Endpoints disponíveis:
+#   GET  /health/live   — liveness (sempre 200 quando o processo está ativo)
+#   GET  /health/ready  — readiness (200 se todos os checks UP; 503 se algum DOWN)
+#   GET  /health        — status geral (versão, uptime, timestamp)
+#   POST /analysis      — análise de um ou mais namespaces (gera relatório Markdown)
+#
+# Porta padrão: 8000 (variável de ambiente PORT)
+#
+# -----------------------------------------------------------------------------
+# 1. Subir a API localmente (em outro terminal)
+# -----------------------------------------------------------------------------
+#
+#   cd /home/parraes/redhat/shiftwise-ai/kubeoptix-core-ai
+#   source .venv/bin/activate   # se existir
+#   python api.py
+#
+# Opcional — simular ambiente OpenShift:
+#
+#   export PORT=8000
+#   export MARK_DOWN_FILE=/tmp/report.md
+#   python api.py
+#
+# -----------------------------------------------------------------------------
+# 2. Configurar URL base
+# -----------------------------------------------------------------------------
+#
+# Local (use 127.0.0.1 — com Podman, localhost/::1 costuma falhar com "Connection reset by peer"):
+export BASE_URL="http://127.0.0.1:8000"
+
+# OpenShift (Route pública — ajuste o host):
+# export BASE_URL="https://kubeoptix-core-ai-api.apps.seu-cluster.example.com"
+
+# OpenShift (port-forward — execute antes: oc port-forward svc/kubeoptix-core-ai-api 8000:8000):
+# export BASE_URL="http://127.0.0.1:8000"
+
+# -----------------------------------------------------------------------------
+# 3. Liveness — GET /health/live
+# -----------------------------------------------------------------------------
+# Esperado: HTTP 200
+# Corpo:    {"status":"UP","check":"liveness"}
+
+curl -sS -X GET "${BASE_URL}/health/live"
+
+curl -sS -w "\nHTTP %{http_code}\n" -X GET "${BASE_URL}/health/live"
+
+curl -sS -X GET "${BASE_URL}/health/live" | jq .
+
+# -----------------------------------------------------------------------------
+# 4. Readiness — GET /health/ready
+# -----------------------------------------------------------------------------
+# Esperado: HTTP 200 (todos os checks UP) ou HTTP 503 (algum check DOWN)
+# Checks:   app_initialized, tmp_writable, working_directory, mark_down_file
+
+curl -sS -X GET "${BASE_URL}/health/ready"
+
+curl -sS -w "\nHTTP %{http_code}\n" -X GET "${BASE_URL}/health/ready"
+
+curl -sS -X GET "${BASE_URL}/health/ready" | jq .
+
+# Apenas o status agregado:
+curl -sS "${BASE_URL}/health/ready" | jq -r '.status'
+
+# Listar checks com falha (útil quando retorna 503):
+curl -sS "${BASE_URL}/health/ready" | jq '.checks[] | select(.status != "UP")'
+
+# -----------------------------------------------------------------------------
+# 5. Health geral — GET /health
+# -----------------------------------------------------------------------------
+# Esperado: HTTP 200
+# Campos:   status, timestamp, version, uptime_seconds, mark_down_file
+
+curl -sS -X GET "${BASE_URL}/health"
+
+curl -sS -w "\nHTTP %{http_code}\n" -X GET "${BASE_URL}/health"
+
+curl -sS -X GET "${BASE_URL}/health" | jq .
+
+# -----------------------------------------------------------------------------
+# 6. Análise de namespaces — POST /analysis
+# -----------------------------------------------------------------------------
+# Esperado: HTTP 201 (sucesso) | 404 (namespace inexistente) | 422 (body inválido)
+# Dados:    KUBEOPTIX_METADATA_DIR (padrão: /app/data/assessment)
+# Saída:    KUBEOPTIX_OUTPUT_DIR (padrão: /app/data/reports)
+#
+# Local — aponte para um diretório de assessment com namespaces reais:
+#   export KUBEOPTIX_METADATA_DIR=/caminho/para/assessment
+#   export KUBEOPTIX_OUTPUT_DIR=/tmp/reports
+#   python api.py
+#
+# Um namespace:
+curl -sS -X POST "${BASE_URL}/analysis" \
+  -H "Content-Type: application/json" \
+  -d '{"namespaces": ["example-ns-prd"], "enable_ml": false}'
+
+curl -sS -w "\nHTTP %{http_code}\n" -X POST "${BASE_URL}/analysis" \
+  -H "Content-Type: application/json" \
+  -d '{"namespaces": ["example-ns-prd"], "enable_ml": false}'
+
+curl -sS -X POST "${BASE_URL}/analysis" \
+  -H "Content-Type: application/json" \
+  -d '{"namespaces": ["example-ns-prd"], "enable_ml": false}' | jq .
+
+# Múltiplos namespaces:
+curl -sS -X POST "${BASE_URL}/analysis" \
+  -H "Content-Type: application/json" \
+  -d '{"namespaces": ["example-ns-prd", "other-ns-prd"], "enable_ml": false}' | jq .
+
+# Namespace inexistente (esperado: HTTP 404):
+curl -sS -w "\nHTTP %{http_code}\n" -X POST "${BASE_URL}/analysis" \
+  -H "Content-Type: application/json" \
+  -d '{"namespaces": ["namespace-que-nao-existe"]}'
+
+# -----------------------------------------------------------------------------
+# 7. Teste rápido dos três endpoints (com código HTTP)
+# -----------------------------------------------------------------------------
+
+for path in /health/live /health/ready /health; do
+  echo "=== GET ${path} ==="
+  curl -sS -w "HTTP %{http_code}\n" -o /tmp/kubeoptix-response.json "${BASE_URL}${path}"
+  cat /tmp/kubeoptix-response.json
+  echo
+done
+
+# -----------------------------------------------------------------------------
+# 8. Verbose (útil para depuração de TLS/headers em OpenShift)
+# -----------------------------------------------------------------------------
+
+curl -v -X GET "${BASE_URL}/health/live"
+
+curl -v -X GET "${BASE_URL}/health/ready"
+
+curl -v -X GET "${BASE_URL}/health"
+
+# -----------------------------------------------------------------------------
+# 9. Troubleshooting — "curl: (56) Recv failure: Connection reset by peer"
+# -----------------------------------------------------------------------------
+#
+# Causa comum com Podman: localhost resolve para IPv6 (::1), mas o mapeamento
+# -p 8000:8000 do pasta só atende IPv4.
+#
+# Solução imediata:
+#   export BASE_URL="http://127.0.0.1:8000"
+#   curl -sS "${BASE_URL}/health/live"
+#
+# Alternativa no Podman (forçar bind IPv4):
+#   podman run -p 127.0.0.1:8000:8000 teste
+#
+# Verificar quem ocupa a porta:
+#   ss -tlnp | grep 8000
+#
+# -----------------------------------------------------------------------------
+# 10. OpenShift — exemplos auxiliares
+# -----------------------------------------------------------------------------
+#
+# Port-forward do Service:
+#   oc port-forward svc/kubeoptix-core-ai-api 8000:8000
+#
+# Ver logs do pod:
+#   oc logs -l app.kubernetes.io/name=kubeoptix-core-ai-api -f
+#
+# Testar probes como o cluster (dentro do pod ou via port-forward):
+#   curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/health/live
+#   curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/health/ready
+#
+# Análise via exec no pod (ajuste o namespace analisado):
+#   oc exec -n shiftwise-ai statefulset/kubeoptix-core-ai -- \
+#     curl -sS -X POST "http://127.0.0.1:8000/analysis" \
+#     -H "Content-Type: application/json" \
+#     -d '{"namespaces": ["meu-namespace-prd"], "enable_ml": false}'

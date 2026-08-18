@@ -34,8 +34,8 @@ def test_flowchart_quotes_labels_with_special_chars() -> None:
     line = _node_shape("service", "svc_x", "Service/foo :8081")
     assert '    svc_x[("Service/foo :8081")]' == line
 
-    edge_line = _node_shape("external", "ext_x", "Cliente<br/>host.com")
-    assert '    ext_x(["Cliente<br/>host.com"])' == edge_line
+    edge_line = _node_shape("external", "ext_x", "Cliente / host.com")
+    assert '    ext_x(["Cliente / host.com"])' == edge_line
 
 
 def test_flowchart_rect_fallback_for_parens() -> None:
@@ -52,10 +52,10 @@ def test_flowchart_rect_fallback_for_brackets() -> None:
     from kubeoptix_core_ai.visualization.mermaid.flowchart import _node_shape
     from kubeoptix_core_ai.visualization.sanitize import label_needs_rect_node_shape
 
-    label = "Image<br/>registry:4567[CAMINHO_REMOVIDO]"
+    label = "Image / registry:4567[CAMINHO_REMOVIDO]"
     assert label_needs_rect_node_shape(label)
     line = _node_shape("external", "img_x", label)
-    assert '    img_x["Image<br/>registry:4567(CAMINHO_REMOVIDO)"]' == line
+    assert '    img_x["Image / registry:4567(CAMINHO_REMOVIDO)"]' == line
 
 
 def test_sanitize_mermaid_edge_label_quotes_when_needed() -> None:
