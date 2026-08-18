@@ -84,6 +84,7 @@ class DiagramNode(BaseModel):
     id: str
     node_type: str
     label: str
+    subgraph: str | None = None
     provenance: tuple[ProvenanceRef, ...] = ()
 
 
@@ -94,7 +95,17 @@ class DiagramEdge(BaseModel):
     target_id: str
     edge_type: str
     label: str | None = None
+    communication_scope: Literal["internal", "cross_namespace", "external"] | None = None
     evidence: tuple[ProvenanceRef, ...] = ()
+
+
+class FlowchartSubgraph(BaseModel):
+    """Agrupamento visual de nós no diagrama (ex.: namespace, cluster externo)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    title: str
 
 
 class FlowchartDataset(BaseModel):
@@ -107,6 +118,7 @@ class FlowchartDataset(BaseModel):
     direction: Literal["LR", "TB"] = "LR"
     nodes: tuple[DiagramNode, ...]
     edges: tuple[DiagramEdge, ...]
+    subgraphs: tuple[FlowchartSubgraph, ...] = ()
 
 
 class VisualizationStatus(str, Enum):

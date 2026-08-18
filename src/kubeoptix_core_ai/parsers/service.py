@@ -52,5 +52,6 @@ def parse_service(file_path: Path) -> ServiceSpec:
         selector=selector,
         ports=tuple(ports),
         session_affinity=spec.get("sessionAffinity"),
+        external_name=spec.get("externalName"),
         source=source,
     )
