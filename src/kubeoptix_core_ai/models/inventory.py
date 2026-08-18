@@ -26,6 +26,7 @@ class ServiceSpec(BaseModel):
     selector: dict[str, str] = Field(default_factory=dict)
     ports: tuple[ServicePortSpec, ...] = ()
     session_affinity: str | None = None
+    external_name: str | None = None
     source: DataSourceRef
 
 

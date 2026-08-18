@@ -31,12 +31,7 @@ def _node_shape(node_type: str, node_id: str, label: str) -> str:
     return f"    {node_id}[{quoted}]"
 
 
-def render_flowchart(dataset: FlowchartDataset) -> str:
-    """Gera bloco ``flowchart`` a partir de um :class:`FlowchartDataset`."""
-    if not dataset.nodes:
-        return f'flowchart {dataset.direction}\n    empty["Sem dados"]'
-
-    lines = [f"flowchart {dataset.direction}"]
+def _render_nodes_flat(dataset: FlowchartDataset, lines: list[str]) -> set[str]:
     seen_ids: set[str] = set()
     for node in dataset.nodes:
         node_id = sanitize_mermaid_id(node.id)
@@ -44,6 +39,55 @@ def render_flowchart(dataset: FlowchartDataset) -> str:
             continue
         seen_ids.add(node_id)
         lines.append(_node_shape(node.node_type, node_id, node.label))
+    return seen_ids
+
+
+def _render_nodes_grouped(dataset: FlowchartDataset, lines: list[str]) -> set[str]:
+    subgraph_titles = {sg.id: sg.title for sg in dataset.subgraphs}
+    nodes_by_subgraph: dict[str, list] = {sg.id: [] for sg in dataset.subgraphs}
+    ungrouped: list = []
+
+    for node in dataset.nodes:
+        if node.subgraph and node.subgraph in nodes_by_subgraph:
+            nodes_by_subgraph[node.subgraph].append(node)
+        else:
+            ungrouped.append(node)
+
+    seen_ids: set[str] = set()
+    for subgraph_id, title in subgraph_titles.items():
+        group_nodes = nodes_by_subgraph.get(subgraph_id, [])
+        if not group_nodes:
+            continue
+        sg_id = sanitize_mermaid_id(subgraph_id)
+        lines.append(f'    subgraph {sg_id}["{sanitize_mermaid_label(title)}"]')
+        for node in group_nodes:
+            node_id = sanitize_mermaid_id(node.id)
+            if node_id in seen_ids:
+                continue
+            seen_ids.add(node_id)
+            lines.append(_node_shape(node.node_type, node_id, node.label))
+        lines.append("    end")
+
+    for node in ungrouped:
+        node_id = sanitize_mermaid_id(node.id)
+        if node_id in seen_ids:
+            continue
+        seen_ids.add(node_id)
+        lines.append(_node_shape(node.node_type, node_id, node.label))
+
+    return seen_ids
+
+
+def render_flowchart(dataset: FlowchartDataset) -> str:
+    """Gera bloco ``flowchart`` a partir de um :class:`FlowchartDataset`."""
+    if not dataset.nodes:
+        return f'flowchart {dataset.direction}\n    empty["Sem dados"]'
+
+    lines = [f"flowchart {dataset.direction}"]
+    if dataset.subgraphs:
+        _render_nodes_grouped(dataset, lines)
+    else:
+        _render_nodes_flat(dataset, lines)
 
     for edge in dataset.edges:
         source = sanitize_mermaid_id(edge.source_id)

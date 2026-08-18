@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from kubeoptix_core_ai.config import AnalyzerConfig
+from kubeoptix_core_ai.report.finding_groups import group_identical_res_findings
 from kubeoptix_core_ai.report.markdown import (
     REPORT_FILE_ENCODING,
     REPORT_FILE_LANGUAGE,
@@ -87,7 +88,8 @@ def test_markdown_findings_section_is_index_not_duplicate(
     assert "| ID | Severidade |" in section_16
     assert section_16.count("**Origem dos dados:**") == 0
     analysis_count = md.count("**Análise:**")
-    assert analysis_count == bundle.analysis.finding_count
+    grouped_count = len(group_identical_res_findings(bundle.analysis.findings))
+    assert analysis_count == grouped_count
 
 
 def test_markdown_distinguishes_usage_from_request(
