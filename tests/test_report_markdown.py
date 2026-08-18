@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from kubeoptix_core_ai.config import AnalyzerConfig
-from kubeoptix_core_ai.report.finding_groups import group_identical_res_findings
+from kubeoptix_core_ai.report.finding_groups import finding_section_ids, group_identical_res_findings
 from kubeoptix_core_ai.report.markdown import (
     REPORT_FILE_ENCODING,
     REPORT_FILE_LANGUAGE,
@@ -210,9 +210,11 @@ def test_recommendations_link_to_finding_anchors(
     }
     assert linked_findings
 
+    section_ids = finding_section_ids(bundle.analysis.findings)
     for finding_id in linked_findings:
-        anchor = finding_id.lower()
-        assert f"### {finding_id}" in md
+        section_id = section_ids[finding_id]
+        anchor = section_id.lower()
+        assert f"### {section_id}" in md
         assert f"[`{finding_id}`](#{anchor})" in md
 
     rec_start = md.index("## 19. Recomendações")
