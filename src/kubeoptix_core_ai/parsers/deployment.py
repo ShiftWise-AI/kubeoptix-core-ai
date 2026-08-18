@@ -6,6 +6,7 @@ from pathlib import Path
 
 from kubeoptix_core_ai.errors import ParseError
 from kubeoptix_core_ai.models.source import DataSourceRef, FieldRef, source_from_document
+from kubeoptix_core_ai.models.storage import VolumeMountSpec, VolumeSpec
 from kubeoptix_core_ai.models.workload import ContainerSpec, ProbeSpec, Workload
 from kubeoptix_core_ai.normalize.quantities import parse_cpu_quantity, parse_memory_quantity
 from kubeoptix_core_ai.parsers.base import load_yaml_file
