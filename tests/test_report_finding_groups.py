@@ -71,7 +71,7 @@ def test_markdown_groups_res_findings_in_sections(
     bundle = AssessmentPipeline(config).run(EXAMPLE_NAMESPACE)
     md = MarkdownReportGenerator().generate(bundle)
 
-    assert "(2 workloads)" in md
+    assert "(2 workloads" in md
     assert "**Workloads afetados (2):**" in md
     analysis_blocks = md.count("**Análise:**")
     grouped = len(group_identical_res_findings(bundle.analysis.findings))

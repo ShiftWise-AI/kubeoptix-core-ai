@@ -76,12 +76,12 @@ def _group_id_label(findings: Sequence[Finding]) -> str:
 
 def _group_title(findings: Sequence[Finding]) -> str:
     primary = findings[0]
-    label = _group_id_label(findings)
     if len(findings) == 1:
-        return f"### {label} — [{primary.category}]"
+        return f"### {primary.id} — [{primary.category}]"
+    label = _group_id_label(findings)
     return (
-        f"### {label} — [{primary.category}] "
-        f"({len(findings)} workloads)"
+        f"### {primary.id} — [{primary.category}] "
+        f"({len(findings)} workloads; {label})"
     )
 
 
@@ -183,12 +183,14 @@ def format_grouped_finding(findings: Sequence[Finding]) -> str:
     return "\n".join(lines)
 
 
-def grouped_finding_anchor_tags(findings: Sequence[Finding]) -> str:
-    """Âncoras HTML para todos os IDs do grupo (links do índice e recomendações)."""
-    return "\n".join(
-        f'<a id="{finding.id.lower()}"></a>'
-        for finding in findings
-    )
+def finding_section_ids(findings: Sequence[Finding]) -> dict[str, str]:
+    """Mapeia cada finding ao ID de seção Markdown (cabeçalho `###`) no relatório."""
+    section_ids: dict[str, str] = {}
+    for group in group_identical_res_findings(findings):
+        section_id = group[0].id
+        for finding in group:
+            section_ids[finding.id] = section_id
+    return section_ids
 
 
 def severity_sort_key(findings: Sequence[Finding]) -> tuple[int, str]:

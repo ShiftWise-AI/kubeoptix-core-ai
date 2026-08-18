@@ -20,7 +20,6 @@ from kubeoptix_core_ai.analysis.helpers import (
     pool_cpu_allocatable_millicores,
     pool_memory_allocatable_bytes,
 )
-from kubeoptix_core_ai.analysis.report import format_finding
 from kubeoptix_core_ai.models.finding import AnalysisReport, Finding, Severity
 from kubeoptix_core_ai.models.inventory import (
     ConfigMapSpec,
@@ -32,8 +31,17 @@ from kubeoptix_core_ai.models.inventory import (
 )
 from kubeoptix_core_ai.models.node import WorkNode
 from kubeoptix_core_ai.models.workload import Workload
+from kubeoptix_core_ai.report.finding_groups import (
+    finding_section_ids,
+    format_grouped_finding,
+    group_identical_res_findings,
+)
 from kubeoptix_core_ai.report.pipeline import AssessmentBundle
+from kubeoptix_core_ai.visualization.datasets.architecture import (
+    build_namespace_architecture_diagram,
+)
 from kubeoptix_core_ai.visualization.markdown import render_section_visualizations
+from kubeoptix_core_ai.visualization.mermaid import MermaidGenerator
 from kubeoptix_core_ai.visualization.pipeline import VisualizationPipeline
 
 REPORT_FILE_ENCODING = "utf-8"
@@ -480,6 +488,38 @@ def _runtime_metrics_table(workloads: tuple[Workload, ...]) -> str:
     )
 
 
+def _namespace_architecture_section(bundle: AssessmentBundle) -> str:
+    """Diagrama Mermaid de arquitetura baseado exclusivamente no inventário YAML."""
+    diagram = build_namespace_architecture_diagram(bundle)
+    if diagram is None:
+        return (
+            "> Não foram identificadas relações de comunicação suficientes no "
+            "inventário YAML para representar a arquitetura deste namespace.\n"
+        )
+
+    mermaid = MermaidGenerator().render_flowchart(diagram)
+    legend = (
+        "**Legenda dos grupos:**\n\n"
+        "- **Namespace atual** — Pods (workloads), Services e Routes do namespace.\n"
+        "- **Outros namespaces** — dependências com namespace explícito nos YAMLs.\n"
+        "- **Fora do cluster** — clientes HTTP(S), bancos de dados e destinos "
+        "`ExternalName` evidenciados nos YAMLs.\n\n"
+        "**Tipos de aresta:** rótulos indicam a relação comprovada (ex.: `selector`, "
+        "`spec.to`, `credenciais DB`, `env`) e o escopo (`interno`, "
+        "`entre namespaces`, `externo`).\n\n"
+        "> Contagem de instâncias nos Pods: réplicas desejadas/prontas do Deployment "
+        "(ou pods coletados no inventário, quando aplicável).\n\n"
+        "> O diagrama foca em fluxos de comunicação. Secrets, imagens de container "
+        "e ConfigMaps não são exibidos — apenas relações evidenciadas no inventário YAML.\n"
+    )
+    return (
+        f"{legend}\n"
+        "```mermaid\n"
+        f"{mermaid}\n"
+        "```\n"
+    )
+
+
 def _namespace_totals_table(bundle: AssessmentBundle) -> str:
     wl_diag = bundle.diagnostic.workloads
     wn_diag = bundle.diagnostic.worknodes
@@ -615,18 +655,34 @@ def _workloads_summary_table(workloads: tuple[Workload, ...]) -> str:
     )
 
 
-def _findings_index_table(findings: tuple[Finding, ...]) -> str:
+def _findings_index_table(
+    findings: tuple[Finding, ...],
+    section_ids: dict[str, str],
+) -> str:
     rows: list[tuple[str, ...]] = []
-    for finding in findings:
-        summary = finding.analysis
+    for group in group_identical_res_findings(findings):
+        primary = group[0]
+        summary = primary.analysis
         if len(summary) > 120:
             summary = summary[:117] + "..."
+        if len(group) == 1:
+            finding_id = _finding_link(primary.id, section_ids)
+            workload_col = primary.workload or "—"
+        else:
+            first_id = group[0].id
+            last_id = group[-1].id
+            finding_id = (
+                f"{_finding_link(first_id, section_ids)} … "
+                f"{_finding_link(last_id, section_ids)} "
+                f"({len(group)})"
+            )
+            workload_col = f"{len(group)} workloads"
         rows.append(
             (
-                _finding_link(finding.id),
-                finding.severity.value,
-                finding.category,
-                finding.workload or "—",
+                finding_id,
+                primary.severity.value,
+                primary.category,
+                workload_col,
                 summary.replace("|", "\\|"),
             )
         )
@@ -659,7 +715,10 @@ def _acceptance_criterion(finding: Finding) -> str:
     return "Validar em ambiente não produtivo antes de promover"
 
 
-def _action_plan_table(findings: tuple[Finding, ...]) -> str:
+def _action_plan_table(
+    findings: tuple[Finding, ...],
+    section_ids: dict[str, str],
+) -> str:
     actionable = [f for f in findings if f.recommendation]
     if not actionable:
         return "_Nenhuma ação recomendada com os dados atuais._\n"
@@ -679,7 +738,7 @@ def _action_plan_table(findings: tuple[Finding, ...]) -> str:
             (
                 _severity_priority(finding.severity),
                 finding.recommendation or "—",
-                _finding_link(finding.id),
+                _finding_link(finding.id, section_ids),
                 _acceptance_criterion(finding),
             )
         )
@@ -701,17 +760,23 @@ def _finding_anchor_id(finding_id: str) -> str:
     return finding_id.lower()
 
 
-def _finding_link(finding_id: str) -> str:
-    anchor = _finding_anchor_id(finding_id)
+def _finding_link(finding_id: str, section_ids: dict[str, str]) -> str:
+    section_id = section_ids.get(finding_id, finding_id)
+    anchor = _finding_anchor_id(section_id)
     return f"[`{finding_id}`](#{anchor})"
+
+
+def _format_finding_with_anchor(findings: tuple[Finding, ...]) -> str:
+    """Renderiza um finding isolado ou um grupo RES-* equivalente."""
+    return format_grouped_finding(findings)
 
 
 def _section_findings(findings: tuple[Finding, ...], intro: str) -> str:
     if not findings:
         return f"{intro}\n\n_Nenhum finding nesta categoria._\n"
     parts = [intro, ""]
-    for finding in findings:
-        parts.append(format_finding(finding))
+    for group in group_identical_res_findings(findings):
+        parts.append(_format_finding_with_anchor(group))
         parts.append("")
     return "\n".join(parts)
 
@@ -899,7 +964,10 @@ def _conclusion_text(report: AnalysisReport, bundle: AssessmentBundle) -> str:
     return "".join(parts)
 
 
-def _recommendations_list(findings: tuple[Finding, ...]) -> str:
+def _recommendations_list(
+    findings: tuple[Finding, ...],
+    section_ids: dict[str, str],
+) -> str:
     recs: list[str] = []
     seen: set[str] = set()
     for finding in findings:
@@ -909,13 +977,16 @@ def _recommendations_list(findings: tuple[Finding, ...]) -> str:
         if key in seen:
             continue
         seen.add(key)
-        recs.append(f"- {key} ({_finding_link(finding.id)})")
+        recs.append(f"- {key} ({_finding_link(finding.id, section_ids)})")
     if not recs:
         return "_Nenhuma recomendação específica gerada._\n"
     return "\n".join(recs) + "\n"
 
 
-def _risks_list(findings: tuple[Finding, ...]) -> str:
+def _risks_list(
+    findings: tuple[Finding, ...],
+    section_ids: dict[str, str],
+) -> str:
     risky = [
         f
         for f in findings
@@ -927,13 +998,16 @@ def _risks_list(findings: tuple[Finding, ...]) -> str:
     for finding in risky:
         impact = finding.impact or "Impacto não detalhado no finding."
         lines.append(
-            f"- {_finding_link(finding.id)} [{finding.severity.value}] — "
+            f"- {_finding_link(finding.id, section_ids)} [{finding.severity.value}] — "
             f"{finding.analysis} *Impacto:* {impact}"
         )
     return "\n".join(lines) + "\n"
 
 
-def _opportunities_list(findings: tuple[Finding, ...]) -> str:
+def _opportunities_list(
+    findings: tuple[Finding, ...],
+    section_ids: dict[str, str],
+) -> str:
     opps = [
         f
         for f in findings
@@ -950,7 +1024,9 @@ def _opportunities_list(findings: tuple[Finding, ...]) -> str:
         if key in seen:
             continue
         seen.add(key)
-        lines.append(f"- {finding.recommendation} ({_finding_link(finding.id)})")
+        lines.append(
+            f"- {finding.recommendation} ({_finding_link(finding.id, section_ids)})"
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -1145,6 +1221,7 @@ class MarkdownReportGenerator:
         report = bundle.analysis
         ctx = bundle.context
         diag = bundle.diagnostic
+        section_ids = finding_section_ids(report.findings)
         visualizations = VisualizationPipeline().build(bundle)
         ns = report.namespace
         generated = bundle.generated_at.strftime("%d/%m/%Y %H:%M UTC")
@@ -1226,6 +1303,8 @@ class MarkdownReportGenerator:
         sections.append(_namespace_totals_table(bundle))
         sections.append("\n### Comparativo request / limit / uso (snapshot)\n")
         sections.append(_resource_balance_table(bundle))
+        sections.append("\n### Arquitetura\n")
+        sections.append(_namespace_architecture_section(bundle))
         sections.append("\n### Visualizações\n")
         sections.append(render_section_visualizations(visualizations.by_section("namespace_overview")))
 
@@ -1393,26 +1472,28 @@ class MarkdownReportGenerator:
             sections.append("_Camada ML local desativada nesta execução._\n")
 
         sections.extend(["", "---", "", "## 16. Findings", ""])
+        grouped_count = len(group_identical_res_findings(report.findings))
         sections.append(
-            f"Total: **{report.finding_count}** findings. "
+            f"Total: **{report.finding_count}** findings "
+            f"({grouped_count} entradas após agrupar RES-* equivalentes). "
             "Detalhes completos nas seções analíticas (7–15); "
             "índice resumido abaixo.\n"
         )
-        sections.append(_findings_index_table(report.findings))
+        sections.append(_findings_index_table(report.findings, section_ids))
         sections.append("\n### Visualizações\n")
         sections.append(render_section_visualizations(visualizations.by_section("findings")))
 
         sections.extend(["", "---", "", "## 17. Oportunidades de otimização", ""])
-        sections.append(_opportunities_list(report.findings))
+        sections.append(_opportunities_list(report.findings, section_ids))
 
         sections.extend(["", "---", "", "## 18. Riscos", ""])
-        sections.append(_risks_list(report.findings))
+        sections.append(_risks_list(report.findings, section_ids))
 
         sections.extend(["", "---", "", "## 19. Recomendações", ""])
         sections.append("### Plano de ação\n")
-        sections.append(_action_plan_table(report.findings))
+        sections.append(_action_plan_table(report.findings, section_ids))
         sections.append("\n### Lista consolidada\n")
-        sections.append(_recommendations_list(report.findings))
+        sections.append(_recommendations_list(report.findings, section_ids))
 
         sections.extend(["", "---", "", "## 20. Conclusão", ""])
         sections.append(_conclusion_text(report, bundle))
