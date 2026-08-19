@@ -8,6 +8,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import yaml
+
 from kubeoptix_core_ai.visualization.kubediagrams.config import bundled_config_path
 from kubeoptix_core_ai.visualization.png.assets import safe_asset_filename
 
@@ -101,13 +103,42 @@ class KubeDiagramsRenderer:
             logger.debug("Nenhum manifest fornecido para %s", viz_id)
             self._set_error("nenhum manifest YAML fornecido para renderização")
             return None
+        valid_manifests = self._filter_parseable_manifests(manifests)
+        if not valid_manifests:
+            self._set_error("nenhum manifest YAML válido/parseável para renderização")
+            return None
 
         output_path = self._output_path(viz_id)
-        if not self._invoke_kube_diagrams(manifests, output_path):
+        if not self._invoke_kube_diagrams(valid_manifests, output_path):
             if self._last_error is None:
                 self._set_error("falha não detalhada ao executar KubeDiagrams")
             return None
         return self._relative_path(viz_id)
+
+    def _filter_parseable_manifests(self, manifests: tuple[Path, ...]) -> tuple[Path, ...]:
+        valid: list[Path] = []
+        for path in manifests:
+            try:
+                content = path.read_text(encoding="utf-8")
+            except OSError as exc:
+                logger.warning("Manifest ignorado (erro de leitura): %s (%s)", path, exc)
+                continue
+            try:
+                docs = list(yaml.safe_load_all(content))
+            except yaml.YAMLError as exc:
+                logger.warning("Manifest ignorado (YAML inválido): %s (%s)", path, exc)
+                continue
+            if not docs or all(doc is None for doc in docs):
+                logger.warning("Manifest ignorado (vazio): %s", path)
+                continue
+            valid.append(path)
+        if len(valid) < len(manifests):
+            logger.info(
+                "KubeDiagrams: %d/%d manifests válidos após filtro YAML",
+                len(valid),
+                len(manifests),
+            )
+        return tuple(valid)
 
     def _invoke_kube_diagrams(self, manifests: tuple[Path, ...], output_path: Path) -> bool:
         if shutil.which("kube-diagrams") and shutil.which("dot"):
@@ -250,10 +281,10 @@ class KubeDiagramsRenderer:
             logger.warning(
                 "KubeDiagrams retornou código %s: %s",
                 result.returncode,
-                stderr[:500] if stderr else "(sem stderr)",
+                stderr[:2000] if stderr else "(sem stderr)",
             )
             self._set_error(
-                f"exit_code={result.returncode}; stderr={(stderr[:500] if stderr else '(sem stderr)')}"
+                f"exit_code={result.returncode}; stderr={(stderr[:2000] if stderr else '(sem stderr)')}"
             )
             return False
 
