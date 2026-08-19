@@ -168,6 +168,95 @@ def test_select_architecture_manifests_prioritizes_layered_order(
     assert route_idx < service_idx < workload_idx < configmap_idx
 
 
+def test_select_architecture_manifests_excludes_common_ocp_artifacts(
+    tmp_path: Path,
+) -> None:
+    ns = tmp_path / EXAMPLE_NAMESPACE
+    app = ns / "apps" / "backend-acesso-app"
+    (app / "deployments").mkdir(parents=True)
+    (app / "configmaps").mkdir(parents=True)
+    (app / "secrets").mkdir(parents=True)
+
+    (app / "deployments" / "backend-acesso-app.yaml").write_text(
+        "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: backend-acesso-app\n",
+        encoding="utf-8",
+    )
+    (app / "configmaps" / "kube-root-ca.crt.yaml").write_text(
+        "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: kube-root-ca.crt\n",
+        encoding="utf-8",
+    )
+    (app / "configmaps" / "backend-config.yaml").write_text(
+        "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: backend-config\n",
+        encoding="utf-8",
+    )
+    (app / "secrets" / "default-token-abcd1.yaml").write_text(
+        "apiVersion: v1\nkind: Secret\nmetadata:\n  name: default-token-abcd1\n",
+        encoding="utf-8",
+    )
+    (app / "secrets" / "backend-secret.yaml").write_text(
+        "apiVersion: v1\nkind: Secret\nmetadata:\n  name: backend-secret\n",
+        encoding="utf-8",
+    )
+
+    manifests = select_architecture_manifests(ns)
+    names = {path.name for path in manifests}
+
+    assert "backend-acesso-app.yaml" in names
+    assert "backend-config.yaml" in names
+    assert "backend-secret.yaml" in names
+    assert "kube-root-ca.crt.yaml" not in names
+    assert "default-token-abcd1.yaml" not in names
+
+
+def test_select_architecture_manifests_can_include_common_ocp_by_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ns = tmp_path / EXAMPLE_NAMESPACE
+    app = ns / "apps" / "backend-acesso-app"
+    (app / "deployments").mkdir(parents=True)
+    (app / "configmaps").mkdir(parents=True)
+
+    (app / "deployments" / "backend-acesso-app.yaml").write_text(
+        "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: backend-acesso-app\n",
+        encoding="utf-8",
+    )
+    (app / "configmaps" / "kube-root-ca.crt.yaml").write_text(
+        "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: kube-root-ca.crt\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("KUBEOPTIX_DIAGRAM_INCLUDE_COMMON_OCP", "true")
+    manifests = select_architecture_manifests(ns)
+    names = {path.name for path in manifests}
+    assert "kube-root-ca.crt.yaml" in names
+
+
+def test_select_architecture_manifests_env_include_overrides_exclude(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ns = tmp_path / EXAMPLE_NAMESPACE
+    app = ns / "apps" / "backend-acesso-app"
+    (app / "deployments").mkdir(parents=True)
+    (app / "configmaps").mkdir(parents=True)
+
+    (app / "deployments" / "backend-acesso-app.yaml").write_text(
+        "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: backend-acesso-app\n",
+        encoding="utf-8",
+    )
+    (app / "configmaps" / "backend-config.yaml").write_text(
+        "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: backend-config\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("KUBEOPTIX_DIAGRAM_EXCLUDE_PATH_REGEX", ".*/configmaps/.*")
+    monkeypatch.setenv("KUBEOPTIX_DIAGRAM_INCLUDE_PATH_REGEX", ".*/configmaps/backend-config\\.yaml$")
+    manifests = select_architecture_manifests(ns)
+    names = {path.name for path in manifests}
+    assert "backend-config.yaml" in names
+
+
 def test_select_architecture_manifests_empty_for_missing_dir(tmp_path: Path) -> None:
     assert select_architecture_manifests(tmp_path / "missing") == ()
 

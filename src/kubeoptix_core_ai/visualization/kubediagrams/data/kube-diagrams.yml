@@ -1,11 +1,49 @@
-# Configuração para Route OpenShift (route.openshift.io/v1).
-# Ícone remoto do repositório oficial KubeDiagrams (DeathStarBench).
+# Configuração visual dos recursos de inventário para KubeDiagrams.
+# Cada tipo principal recebe ícone dedicado para facilitar leitura humana.
 
 resources:
+  - kind: Deployment
+    apiGroup: apps
+    versions: [v1]
+    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/deploy-128.png
+  - kind: StatefulSet
+    apiGroup: apps
+    versions: [v1]
+    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/sts-128.png
+  - kind: DaemonSet
+    apiGroup: apps
+    versions: [v1]
+    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/ds-128.png
+  - kind: Pod
+    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/pod-128.png
+  - kind: Service
+    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/svc-128.png
   - kind: Route
     apiGroup: route.openshift.io
     versions: [v1]
     icon: https://raw.githubusercontent.com/philippemerle/KubeDiagrams/main/examples/deathstarbench/icons/openshift-route.png
+  - kind: HorizontalPodAutoscaler
+    apiGroup: autoscaling
+    versions: [v1, v2, v2beta2]
+    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/hpa-128.png
+  - kind: VerticalPodAutoscaler
+    apiGroup: autoscaling.k8s.io
+    versions: [v1]
+    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/vpa-128.png
+  - kind: PodDisruptionBudget
+    apiGroup: policy
+    versions: [v1]
+    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/pdb-128.png
+  - kind: ConfigMap
+    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/cm-128.png
+  - kind: Secret
+    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/secret-128.png
+  - kind: PersistentVolumeClaim
+    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/pvc-128.png
+  - kind: DeploymentConfig
+    apiGroup: apps.openshift.io
+    versions: [v1]
+    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/deploy-128.png
 
 clusters:
   - labelKey: app.kubernetes.io/name
