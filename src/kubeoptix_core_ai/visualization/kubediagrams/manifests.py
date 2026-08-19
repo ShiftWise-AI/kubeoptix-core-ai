@@ -65,6 +65,7 @@ _SERVICE_ACCOUNT_TOKEN_PATTERN = re.compile(r".+-token-[a-z0-9]{4,}$")
 _GLOBAL_NO_APP_SEGMENTS = (
     "/apps/__sem_app__/",
     "/apps/_no_app_/",
+    "/apps/__no_app__/",
     "/resources/namespaces/",
 )
 _ENV_INCLUDE_COMMON = "KUBEOPTIX_DIAGRAM_INCLUDE_COMMON_OCP"
@@ -162,7 +163,11 @@ def _is_common_ocp_artifact(path: Path) -> bool:
     if any(segment in raw for segment in _GLOBAL_NO_APP_SEGMENTS):
         return True
 
-    if "/configmaps/" in raw and stem in _COMMON_OCP_CONFIGMAPS:
+    if "/configmaps/" in raw and (
+        stem in _COMMON_OCP_CONFIGMAPS
+        or stem.endswith("-global-ca")
+        or stem.endswith("-sys-config")
+    ):
         return True
     if "/secrets/" in raw:
         if stem in _COMMON_OCP_SECRETS:

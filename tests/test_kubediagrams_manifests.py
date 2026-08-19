@@ -318,6 +318,7 @@ def test_select_architecture_manifests_excludes_global_no_app_objects(
     (app / "configmaps").mkdir(parents=True)
     (ns / "apps" / "__sem_app__" / "configmaps").mkdir(parents=True)
     (ns / "apps" / "_no_app_" / "secrets").mkdir(parents=True)
+    (ns / "apps" / "__no_app__" / "configmaps").mkdir(parents=True)
 
     (app / "deployments" / "backend-acesso-app.yaml").write_text(
         "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: backend-acesso-app\n",
@@ -325,6 +326,14 @@ def test_select_architecture_manifests_excludes_global_no_app_objects(
     )
     (app / "configmaps" / "global-ca.yaml").write_text(
         "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: global-ca\n",
+        encoding="utf-8",
+    )
+    (app / "configmaps" / "kubeoptix-core-ai-2-global-ca.yaml").write_text(
+        "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: kubeoptix-core-ai-2-global-ca\n",
+        encoding="utf-8",
+    )
+    (app / "configmaps" / "kubeoptix-core-ai-2-sys-config.yaml").write_text(
+        "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: kubeoptix-core-ai-2-sys-config\n",
         encoding="utf-8",
     )
     (ns / "apps" / "__sem_app__" / "configmaps" / "sys-config.yaml").write_text(
@@ -335,14 +344,21 @@ def test_select_architecture_manifests_excludes_global_no_app_objects(
         "apiVersion: v1\nkind: Secret\nmetadata:\n  name: shared-secret\n",
         encoding="utf-8",
     )
+    (ns / "apps" / "__no_app__" / "configmaps" / "global-ca.yaml").write_text(
+        "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: global-ca\n",
+        encoding="utf-8",
+    )
 
     manifests = select_architecture_manifests(ns)
     paths = {str(path) for path in manifests}
 
     assert any("/deployments/" in path for path in paths)
     assert not any("global-ca.yaml" in path for path in paths)
+    assert not any("kubeoptix-core-ai-2-global-ca.yaml" in path for path in paths)
+    assert not any("kubeoptix-core-ai-2-sys-config.yaml" in path for path in paths)
     assert not any("/apps/__sem_app__/" in path for path in paths)
     assert not any("/apps/_no_app_/" in path for path in paths)
+    assert not any("/apps/__no_app__/" in path for path in paths)
 
 
 def test_select_architecture_manifests_can_include_common_ocp_by_env(
