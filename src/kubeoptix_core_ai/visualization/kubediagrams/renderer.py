@@ -52,6 +52,14 @@ class KubeDiagramsRenderer:
         self._path_prefix = path_prefix.strip("/")
         self._config_path = config_path if config_path is not None else bundled_config_path()
         self._assets_dir.mkdir(parents=True, exist_ok=True)
+        self._last_error: str | None = None
+
+    @property
+    def last_error(self) -> str | None:
+        return self._last_error
+
+    def _set_error(self, message: str | None) -> None:
+        self._last_error = message
 
     def _relative_path(self, viz_id: str) -> str:
         filename = safe_asset_filename(viz_id)
@@ -84,15 +92,20 @@ class KubeDiagramsRenderer:
 
         Retorna caminho relativo para o Markdown ou ``None`` se indisponível/falhar.
         """
+        self._set_error(None)
         if not is_kubediagrams_available():
             logger.debug("KubeDiagrams indisponível (sem CLI/dot nem container runtime)")
+            self._set_error("kube-diagrams/dot indisponível no PATH e sem runtime de container")
             return None
         if not manifests:
             logger.debug("Nenhum manifest fornecido para %s", viz_id)
+            self._set_error("nenhum manifest YAML fornecido para renderização")
             return None
 
         output_path = self._output_path(viz_id)
         if not self._invoke_kube_diagrams(manifests, output_path):
+            if self._last_error is None:
+                self._set_error("falha não detalhada ao executar KubeDiagrams")
             return None
         return self._relative_path(viz_id)
 
@@ -229,6 +242,7 @@ class KubeDiagramsRenderer:
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             logger.warning("Falha ao executar KubeDiagrams: %s", exc)
+            self._set_error(f"erro de execução: {exc}")
             return False
 
         if result.returncode != 0:
@@ -238,10 +252,14 @@ class KubeDiagramsRenderer:
                 result.returncode,
                 stderr[:500] if stderr else "(sem stderr)",
             )
+            self._set_error(
+                f"exit_code={result.returncode}; stderr={(stderr[:500] if stderr else '(sem stderr)')}"
+            )
             return False
 
         if not output_path.is_file() or output_path.stat().st_size <= 0:
             logger.warning("KubeDiagrams não produziu arquivo PNG: %s", output_path)
+            self._set_error(f"arquivo PNG não produzido ou vazio: {output_path}")
             return False
 
         return True

@@ -19,6 +19,7 @@ class DiagramRenderResult:
     image_relpath: str | None
     engine: str | None
     yaml_sources: tuple[str, ...] = ()
+    failure_reason: str | None = None
 
 
 class DiagramRenderer:
@@ -51,9 +52,17 @@ class DiagramRenderer:
                     engine="kubediagrams",
                     yaml_sources=yaml_sources,
                 )
+            reason = self._kubediagrams.last_error
             logger.info(
-                "KubeDiagrams indisponível ou falhou para %s; diagrama não será renderizado",
+                "KubeDiagrams indisponível ou falhou para %s; diagrama não será renderizado. Motivo: %s",
                 viz_id,
+                reason or "(não informado)",
+            )
+            return DiagramRenderResult(
+                image_relpath=None,
+                engine=None,
+                yaml_sources=yaml_sources,
+                failure_reason=reason,
             )
 
         # Regra de produto: diagramas de arquitetura/comunicação não devem usar
