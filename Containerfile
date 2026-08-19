@@ -44,6 +44,8 @@ RUN find ./src -type d \( -name "__pycache__" -o -name ".pytest_cache" -o -name 
     && "$VENV_DIR/bin/pip" install --no-cache-dir --no-deps "KubeDiagrams==0.8.0" \
     && "$VENV_DIR/bin/pip" install --no-cache-dir diagrams graphviz2drawio \
     && "$VENV_DIR/bin/pip" install --no-cache-dir -r requirements.txt \
+    && "$VENV_DIR/bin/kube-diagrams" --help >/dev/null \
+    && dot -V >/dev/null \
     && chmod +x run-ocp.sh \
     && chown -R kubeoptix:kubeoptix /app \
     && chmod -R u+rwX /app
