@@ -500,10 +500,17 @@ def _architecture_legend_kubediagrams() -> str:
     return (
         "**Diagrama gerado com [KubeDiagrams](https://github.com/philippemerle/KubeDiagrams)** "
         "a partir dos manifests YAML do namespace.\n\n"
-        "- **Ícones** — recursos Kubernetes/OpenShift padrão (Deployment, Service, Route, etc.).\n"
+        "- **Componentes incluídos** — `Deployment`, `StatefulSet`, `DaemonSet`, "
+        "`DeploymentConfig`, `Pod`, `Service`, `Route`, `HPA`, `VPA`, `PDB`, "
+        "`ConfigMap`, `Secret` e `PVC` (quando presentes no inventário).\n"
         "- **Agrupamentos** — namespace e labels de aplicação (`app`, `app.kubernetes.io/name`).\n"
-        "- **Arestas** — relações declaradas nos YAMLs (owner, selector, reference).\n\n"
-        "> O diagrama reflete o inventário coletado, não o estado em tempo real do cluster.\n"
+        "- **Ligações (linhas e setas)** — representam dependências e referências declaradas "
+        "nos YAMLs (`selector`, `spec.to`, `ownerReference`, `claim`, etc.).\n"
+        "- **Simplificação** — artefatos padrão e repetidos do OCP (ex.: `kube-root-ca.crt`, "
+        "tokens padrão de service account) são ocultados para reduzir ruído visual.\n\n"
+        "> Ajustes por ambiente: `KUBEOPTIX_DIAGRAM_INCLUDE_COMMON_OCP`, "
+        "`KUBEOPTIX_DIAGRAM_INCLUDE_PATH_REGEX` e `KUBEOPTIX_DIAGRAM_EXCLUDE_PATH_REGEX`.\n\n"
+        "> O diagrama mostra o conteúdo do namespace com foco em arquitetura e dependências.\n"
     )
 
 
@@ -519,8 +526,62 @@ def _architecture_legend_custom() -> str:
         "`entre namespaces`, `externo`).\n\n"
         "> Contagem de instâncias nos Pods: réplicas desejadas/prontas do Deployment "
         "(ou pods coletados no inventário, quando aplicável).\n\n"
-        "> O diagrama foca em fluxos de comunicação. Secrets, imagens de container "
-        "e ConfigMaps não são exibidos — apenas relações evidenciadas no inventário YAML.\n"
+        "> Componentes considerados na arquitetura: `Deployment`, `StatefulSet`, "
+        "`DaemonSet`, `DeploymentConfig`, `Pod`, `Service`, `Route`, `HPA`, `VPA`, "
+        "`PDB`, `ConfigMap`, `Secret` e `PVC` (quando presentes no inventário YAML).\n"
+    )
+
+
+def _architecture_manifest_breakdown(manifests: tuple[Path, ...]) -> str:
+    counts = {
+        "routes": 0,
+        "services": 0,
+        "workloads": 0,
+        "pods": 0,
+        "autoscalers": 0,
+        "configmaps": 0,
+        "secrets": 0,
+        "pvcs": 0,
+    }
+    for manifest in manifests:
+        text = str(manifest).lower()
+        if "/routes/" in text or "/routes.route.openshift.io/" in text:
+            counts["routes"] += 1
+        elif "/services/" in text:
+            counts["services"] += 1
+        elif (
+            "/deployments/" in text
+            or "/deployments.apps/" in text
+            or "/statefulsets/" in text
+            or "/statefulsets.apps/" in text
+            or "/daemonsets/" in text
+            or "/daemonsets.apps/" in text
+            or "/deploymentconfigs/" in text
+            or "/deploymentconfigs.apps.openshift.io/" in text
+        ):
+            counts["workloads"] += 1
+        elif "/pods/" in text:
+            counts["pods"] += 1
+        elif (
+            "/horizontalpodautoscalers.autoscaling/" in text
+            or "/hpa/" in text
+            or "/verticalpodautoscalers.autoscaling.k8s.io/" in text
+            or "/vpa/" in text
+            or "/poddisruptionbudgets.policy/" in text
+            or "/pdb/" in text
+        ):
+            counts["autoscalers"] += 1
+        elif "/configmaps/" in text:
+            counts["configmaps"] += 1
+        elif "/secrets/" in text:
+            counts["secrets"] += 1
+        elif "/persistentvolumeclaims/" in text or "/pvc/" in text:
+            counts["pvcs"] += 1
+    return (
+        f"Routes: {counts['routes']} | Services: {counts['services']} | "
+        f"Workloads: {counts['workloads']} | Pods: {counts['pods']} | "
+        f"Autoscalers/PDB: {counts['autoscalers']} | ConfigMaps: {counts['configmaps']} | "
+        f"Secrets: {counts['secrets']} | PVCs: {counts['pvcs']}"
     )
 
 
@@ -560,6 +621,8 @@ def _namespace_architecture_section(
 
     legend = _architecture_legend_kubediagrams()
     lines = [legend, ""]
+    lines.append(f"**Conteúdo do namespace no diagrama:** {_architecture_manifest_breakdown(manifests)}")
+    lines.append("")
     if yaml_sources:
         lines.append("**Manifests YAML utilizados:**")
         for source in yaml_sources[:12]:
