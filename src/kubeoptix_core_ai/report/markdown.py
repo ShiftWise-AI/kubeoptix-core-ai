@@ -500,36 +500,22 @@ def _architecture_legend_kubediagrams() -> str:
     return (
         "**Diagrama gerado com [KubeDiagrams](https://github.com/philippemerle/KubeDiagrams)** "
         "a partir dos manifests YAML do namespace.\n\n"
-        "- **Componentes incluídos** — `Deployment`, `StatefulSet`, `DaemonSet`, "
-        "`DeploymentConfig`, `Pod`, `Service`, `Route`, `HPA`, `VPA`, `PDB`, "
-        "`ConfigMap`, `Secret` e `PVC` (quando presentes no inventário).\n"
-        "- **Agrupamentos** — namespace e labels de aplicação (`app`, `app.kubernetes.io/name`).\n"
-        "- **Ligações (linhas e setas)** — representam dependências e referências declaradas "
-        "nos YAMLs (`selector`, `spec.to`, `ownerReference`, `claim`, etc.).\n"
-        "- **Simplificação** — artefatos padrão e repetidos do OCP (ex.: `kube-root-ca.crt`, "
-        "tokens padrão de service account) são ocultados para reduzir ruído visual.\n\n"
+        "- **Namespace** — quadro único com Routes, Ingresses, Services, workloads e Pods.\n"
+        "- **Comunicação interna** — arestas entre Service, workload e Pod (selector/controller).\n"
+        "- **Comunicação externa** — destinos `ExternalName` e peers no namespace `external`, "
+        "fora do quadro do namespace analisado.\n\n"
+        "**Tipos de aresta:** relações nativas do KubeDiagrams (ex.: `selector`, `controller`, "
+        "`spec.to`).\n\n"
+        "> Pods equivalentes são agrupados e sinalizados com `kubeoptix.io/pod-group-size`.\n\n"
+        "> Componentes considerados: `Deployment`, `StatefulSet`, `DaemonSet`, "
+        "`DeploymentConfig`, `Pod`, `Service`, `Route` e `Ingress`.\n\n"
         "> Ajustes por ambiente: `KUBEOPTIX_DIAGRAM_INCLUDE_COMMON_OCP`, "
-        "`KUBEOPTIX_DIAGRAM_INCLUDE_PATH_REGEX` e `KUBEOPTIX_DIAGRAM_EXCLUDE_PATH_REGEX`.\n\n"
-        "> O diagrama mostra o conteúdo do namespace com foco em arquitetura e dependências.\n"
+        "`KUBEOPTIX_DIAGRAM_INCLUDE_PATH_REGEX` e `KUBEOPTIX_DIAGRAM_EXCLUDE_PATH_REGEX`.\n"
     )
 
 
 def _architecture_legend_custom() -> str:
-    return (
-        "**Legenda dos grupos:**\n\n"
-        "- **Namespace atual** — Pods (workloads), Services e Routes do namespace.\n"
-        "- **Outros namespaces** — dependências com namespace explícito nos YAMLs.\n"
-        "- **Fora do cluster** — clientes HTTP(S), bancos de dados e destinos "
-        "`ExternalName` evidenciados nos YAMLs.\n\n"
-        "**Tipos de aresta:** rótulos indicam a relação comprovada (ex.: `selector`, "
-        "`spec.to`, `credenciais DB`, `env`) e o escopo (`interno`, "
-        "`entre namespaces`, `externo`).\n\n"
-        "> Contagem de instâncias nos Pods: réplicas desejadas/prontas do Deployment "
-        "(ou pods coletados no inventário, quando aplicável).\n\n"
-        "> Componentes considerados na arquitetura: `Deployment`, `StatefulSet`, "
-        "`DaemonSet`, `DeploymentConfig`, `Pod`, `Service`, `Route`, `HPA`, `VPA`, "
-        "`PDB`, `ConfigMap`, `Secret` e `PVC` (quando presentes no inventário YAML).\n"
-    )
+    return _architecture_legend_kubediagrams()
 
 
 def _architecture_manifest_breakdown(manifests: tuple[Path, ...]) -> str:

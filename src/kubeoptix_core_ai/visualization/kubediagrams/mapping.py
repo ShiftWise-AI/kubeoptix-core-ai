@@ -37,6 +37,8 @@ DIAGRAM_YAML_MAPPING: dict[DiagramKind, tuple[str, ...]] = {
         "Deployment | StatefulSet | DaemonSet | DeploymentConfig",
         "Service",
         "Route (route.openshift.io/v1)",
+        "Ingress (networking.k8s.io/v1)",
+        "Pod (agrupados por workload)",
     ),
     DiagramKind.WORKLOAD: (
         "Deployment (workloads do grupo)",

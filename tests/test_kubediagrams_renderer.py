@@ -91,7 +91,7 @@ def test_render_namespace_architecture_invokes_cli(tmp_path: Path) -> None:
     command = run_mock.call_args.args[0]
     assert command[0] == "/usr/bin/kube-diagrams"
     assert "-f" in command and "png" in command
-    assert "-n" in command and "example-ns" in command
+    assert "-n" not in command
 
 
 def test_render_manifests_retries_without_config_when_config_fails(tmp_path: Path) -> None:
@@ -194,7 +194,7 @@ def test_render_manifests_skips_invalid_yaml_and_uses_valid_files(tmp_path: Path
     assert "valid.yaml" in manifest_args[0]
 
 
-def test_render_manifests_enriches_labels_without_mutating_source(tmp_path: Path) -> None:
+def test_render_manifests_normalizes_namespace_without_clustering_labels(tmp_path: Path) -> None:
     assets_dir = tmp_path / "assets"
     renderer = KubeDiagramsRenderer(
         assets_dir,
@@ -207,6 +207,9 @@ def test_render_manifests_enriches_labels_without_mutating_source(tmp_path: Path
         "kind: Deployment\n"
         "metadata:\n"
         "  name: api\n"
+        "  labels:\n"
+        "    app.kubernetes.io/name: api\n"
+        "    helm.sh/chart: api-0.1.0\n"
         "spec:\n"
         "  replicas: 1\n"
     )
@@ -254,121 +257,13 @@ def test_render_manifests_enriches_labels_without_mutating_source(tmp_path: Path
 
     assert rendered_manifest_content is not None
     rendered = rendered_manifest_content
-    assert "app.kubernetes.io/name: api" in rendered
-    assert "app.kubernetes.io/component: workload" in rendered
-    assert "app.kubernetes.io/tier: workload" in rendered
-    assert "app.kubernetes.io/part-of: example-ns" in rendered
+    assert "namespace: example-ns" in rendered
+    assert "app.kubernetes.io/name" not in rendered
+    assert "helm.sh/chart" not in rendered
     assert manifest.read_text(encoding="utf-8") == original
 
 
-def test_render_manifests_enrichment_classifies_observability_tier(tmp_path: Path) -> None:
-    assets_dir = tmp_path / "assets"
-    renderer = KubeDiagramsRenderer(
-        assets_dir,
-        namespace="example-ns",
-        path_prefix="assets",
-    )
-    manifest = tmp_path / "grafana-service.yaml"
-    manifest.write_text(
-        "apiVersion: v1\nkind: Service\nmetadata:\n  name: grafana\n",
-        encoding="utf-8",
-    )
-
-    rendered_manifest_content: str | None = None
-
-    def _fake_run(command, **kwargs):
-        nonlocal rendered_manifest_content
-        rendered_manifest_content = Path(command[-1]).read_text(encoding="utf-8")
-        output = Path(command[command.index("-o") + 1])
-        output.write_bytes(b"png")
-
-        class _Result:
-            returncode = 0
-            stderr = ""
-
-        return _Result()
-
-    with (
-        patch(
-            "kubeoptix_core_ai.visualization.kubediagrams.renderer.is_kubediagrams_available",
-            return_value=True,
-        ),
-        patch(
-            "kubeoptix_core_ai.visualization.kubediagrams.renderer.shutil.which",
-            side_effect=lambda name: f"/usr/bin/{name}",
-        ),
-        patch(
-            "kubeoptix_core_ai.visualization.kubediagrams.renderer.find_kube_diagrams_executable",
-            return_value="/usr/bin/kube-diagrams",
-        ),
-        patch(
-            "kubeoptix_core_ai.visualization.kubediagrams.renderer.subprocess.run",
-            side_effect=_fake_run,
-        ),
-    ):
-        rel = renderer.render_manifests("obs", (manifest,))
-
-    assert rel == "assets/obs.png"
-    assert rendered_manifest_content is not None
-    assert "app.kubernetes.io/component: observability" in rendered_manifest_content
-    assert "app.kubernetes.io/tier: observability" in rendered_manifest_content
-    assert "kubeoptix.io/domain: observability-management" in rendered_manifest_content
-
-
-def test_render_manifests_enrichment_classifies_storage_domain(tmp_path: Path) -> None:
-    assets_dir = tmp_path / "assets"
-    renderer = KubeDiagramsRenderer(
-        assets_dir,
-        namespace="example-ns",
-        path_prefix="assets",
-    )
-    manifest = tmp_path / "pvc.yaml"
-    manifest.write_text(
-        "apiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  name: app-data\n",
-        encoding="utf-8",
-    )
-
-    rendered_manifest_content: str | None = None
-
-    def _fake_run(command, **kwargs):
-        nonlocal rendered_manifest_content
-        rendered_manifest_content = Path(command[-1]).read_text(encoding="utf-8")
-        output = Path(command[command.index("-o") + 1])
-        output.write_bytes(b"png")
-
-        class _Result:
-            returncode = 0
-            stderr = ""
-
-        return _Result()
-
-    with (
-        patch(
-            "kubeoptix_core_ai.visualization.kubediagrams.renderer.is_kubediagrams_available",
-            return_value=True,
-        ),
-        patch(
-            "kubeoptix_core_ai.visualization.kubediagrams.renderer.shutil.which",
-            side_effect=lambda name: f"/usr/bin/{name}",
-        ),
-        patch(
-            "kubeoptix_core_ai.visualization.kubediagrams.renderer.find_kube_diagrams_executable",
-            return_value="/usr/bin/kube-diagrams",
-        ),
-        patch(
-            "kubeoptix_core_ai.visualization.kubediagrams.renderer.subprocess.run",
-            side_effect=_fake_run,
-        ),
-    ):
-        rel = renderer.render_manifests("storage", (manifest,))
-
-    assert rel == "assets/storage.png"
-    assert rendered_manifest_content is not None
-    assert "app.kubernetes.io/tier: platform" in rendered_manifest_content
-    assert "kubeoptix.io/domain: storage-data" in rendered_manifest_content
-
-
-def test_render_manifests_enrichment_classifies_external_services_domain(tmp_path: Path) -> None:
+def test_render_manifests_injects_external_namespace_peer(tmp_path: Path) -> None:
     assets_dir = tmp_path / "assets"
     renderer = KubeDiagramsRenderer(
         assets_dir,
@@ -387,11 +282,15 @@ def test_render_manifests_enrichment_classifies_external_services_domain(tmp_pat
         encoding="utf-8",
     )
 
-    rendered_manifest_content: str | None = None
+    used_manifest_contents: list[str] = []
 
     def _fake_run(command, **kwargs):
-        nonlocal rendered_manifest_content
-        rendered_manifest_content = Path(command[-1]).read_text(encoding="utf-8")
+        nonlocal used_manifest_contents
+        used_manifest_contents = [
+            Path(arg).read_text(encoding="utf-8")
+            for arg in command
+            if str(arg).endswith(".yaml")
+        ]
         output = Path(command[command.index("-o") + 1])
         output.write_bytes(b"png")
 
@@ -422,10 +321,9 @@ def test_render_manifests_enrichment_classifies_external_services_domain(tmp_pat
         rel = renderer.render_manifests("external", (manifest,))
 
     assert rel == "assets/external.png"
-    assert rendered_manifest_content is not None
-    assert "app.kubernetes.io/component: external-services" in rendered_manifest_content
-    assert "app.kubernetes.io/tier: edge" in rendered_manifest_content
-    assert "kubeoptix.io/domain: external-services" in rendered_manifest_content
+    merged = "\n".join(used_manifest_contents)
+    assert "namespace: external" in merged
+    assert "externalName: api.vendor.example.com" in merged
 
 
 def test_render_manifests_can_disable_label_enrichment_by_env(tmp_path: Path) -> None:

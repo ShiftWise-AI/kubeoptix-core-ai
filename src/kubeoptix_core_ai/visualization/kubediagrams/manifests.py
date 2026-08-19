@@ -28,18 +28,15 @@ _ARCHITECTURE_RESOURCE_DIRS = frozenset(
     }
 )
 
-# Recursos adicionais para o desenho completo da arquitetura.
-# Inclui objetos de comunicação, execução e suporte operacional do inventário.
+# Recursos de comunicação e execução para o diagrama simplificado.
 _ARCHITECTURE_SUPPORTING_RESOURCES = (
     "service_files",
     "route_files",
     "pod_files",
-    "configmap_files",
-    "secret_files",
-    "pvc_files",
-    "hpa_files",
-    "vpa_files",
-    "pdb_files",
+)
+
+_COMMUNICATION_RESOURCE_DIRS = (
+    "ingresses.networking.k8s.io",
 )
 
 _COMMON_OCP_CONFIGMAPS = frozenset(
@@ -235,54 +232,31 @@ def _platform_route_files(namespace_root: Path) -> tuple[Path, ...]:
     return tuple(sorted(routes_dir.glob("*.yaml")))
 
 
-def _all_inventory_yaml_files(namespace_root: Path) -> tuple[Path, ...]:
-    """
-    Coleta todos os YAMLs de inventário que podem enriquecer o diagrama.
-
-    Preserva apenas entradas sob `apps/` e `resources/` e remove fontes que
-    degradam legibilidade (métricas de Pod, OLM e logs).
-    """
-    if not namespace_root.is_dir():
-        return ()
-
+def _communication_ingress_files(namespace_root: Path) -> tuple[Path, ...]:
+    """Ingresses usados na camada de entrada HTTP(S)."""
     selected: list[Path] = []
-    for path in namespace_root.rglob("*.yaml"):
-        raw = str(path).lower()
-        if "/apps/" not in raw and "/resources/" not in raw:
-            continue
-        if "/pods.metrics.k8s.io/" in raw:
-            continue
-        if "/clusterserviceversions.operators.coreos.com/" in raw:
-            continue
-        if "/packagemanifests.packages.operators.coreos.com/" in raw:
-            continue
-        # Recursos de alto volume/derivados que poluem o desenho arquitetural.
-        if "/replicasets/" in raw or "/replicasets.apps/" in raw:
-            continue
-        if "/endpointslices.discovery.k8s.io/" in raw:
-            continue
-        if "/endpoints/" in raw:
-            continue
-        if "/events.events.k8s.io/" in raw or "/events/" in raw:
-            continue
-        if "/leases.coordination.k8s.io/" in raw:
-            continue
-        if "/controllerrevisions.apps/" in raw:
-            continue
-        if "/pod-logs/" in raw:
-            continue
-        selected.append(path)
-    return tuple(sorted(selected))
+    for resource_dir in _COMMUNICATION_RESOURCE_DIRS:
+        res_dir = namespace_root / "resources" / resource_dir
+        if res_dir.is_dir():
+            selected.extend(sorted(res_dir.glob("*.yaml")))
+    apps_dir = namespace_root / "apps"
+    if apps_dir.is_dir():
+        for app_dir in sorted(apps_dir.iterdir()):
+            if not app_dir.is_dir():
+                continue
+            ingress_dir = app_dir / "ingresses"
+            if ingress_dir.is_dir():
+                selected.extend(sorted(ingress_dir.glob("*.yaml")))
+    return tuple(selected)
 
 
 def select_architecture_manifests(namespace_root: Path) -> tuple[Path, ...]:
     """
-    Seleciona YAMLs para o diagrama de arquitetura do namespace.
+    Seleciona YAMLs para o diagrama simplificado de comunicação do namespace.
 
-    Inclui controllers de workload e recursos estruturais/de comunicação:
-    Services, Routes (incluindo ``__sem_app__``), Pods coletados, ConfigMaps,
-    Secrets, PVCs e autoscalers/disruption budgets.
-    Exclui ReplicaSets históricos, métricas, operadores OLM e logs.
+    Inclui apenas recursos que representam fluxo de comunicação:
+    Routes, Ingresses, Services, controllers de workload e Pods (agrupados).
+    Exclui ConfigMaps, Secrets, RBAC, storage, autoscalers e artefatos de plataforma.
     """
     if not namespace_root.is_dir():
         return ()
@@ -298,7 +272,7 @@ def select_architecture_manifests(namespace_root: Path) -> tuple[Path, ...]:
         workload_files,
         *supporting_groups,
         _platform_route_files(namespace_root),
-        _all_inventory_yaml_files(namespace_root),
+        _communication_ingress_files(namespace_root),
     )
     include_common = _env_flag(_ENV_INCLUDE_COMMON, default=False)
     include_patterns = _env_regexes(_ENV_INCLUDE_PATH_REGEX)

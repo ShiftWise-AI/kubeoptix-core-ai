@@ -1,5 +1,6 @@
-# Configuração visual dos recursos de inventário para KubeDiagrams.
-# Cada tipo principal recebe ícone dedicado para facilitar leitura humana.
+# Configuração visual simplificada para diagrama de comunicação.
+# Apenas ícones por tipo de recurso; sem subclusters por label dentro do namespace.
+# O agrupamento por namespace é gerado automaticamente pelo KubeDiagrams.
 
 resources:
   - kind: Deployment
@@ -22,112 +23,14 @@ resources:
     apiGroup: networking.k8s.io
     versions: [v1]
     icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/ing-128.png
-  - kind: NetworkPolicy
-    apiGroup: networking.k8s.io
-    versions: [v1]
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/netpol-128.png
   - kind: Route
     apiGroup: route.openshift.io
     versions: [v1]
     icon: https://raw.githubusercontent.com/philippemerle/KubeDiagrams/main/examples/deathstarbench/icons/openshift-route.png
-  - kind: Job
-    apiGroup: batch
-    versions: [v1]
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/job-128.png
-  - kind: CronJob
-    apiGroup: batch
-    versions: [v1]
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/cronjob-128.png
-  - kind: HorizontalPodAutoscaler
-    apiGroup: autoscaling
-    versions: [v1, v2, v2beta2]
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/hpa-128.png
-  - kind: VerticalPodAutoscaler
-    apiGroup: autoscaling.k8s.io
-    versions: [v1]
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/vpa-128.png
-  - kind: PodDisruptionBudget
-    apiGroup: policy
-    versions: [v1]
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/pdb-128.png
-  - kind: ConfigMap
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/cm-128.png
-  - kind: Secret
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/secret-128.png
-  - kind: PersistentVolumeClaim
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/pvc-128.png
-  - kind: PersistentVolume
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/pv-128.png
-  - kind: StorageClass
-    apiGroup: storage.k8s.io
-    versions: [v1]
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/sc-128.png
-  - kind: ServiceAccount
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/sa-128.png
-  - kind: Role
-    apiGroup: rbac.authorization.k8s.io
-    versions: [v1]
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/role-128.png
-  - kind: RoleBinding
-    apiGroup: rbac.authorization.k8s.io
-    versions: [v1]
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/rb-128.png
-  - kind: ClusterRole
-    apiGroup: rbac.authorization.k8s.io
-    versions: [v1]
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/c-role-128.png
-  - kind: ClusterRoleBinding
-    apiGroup: rbac.authorization.k8s.io
-    versions: [v1]
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/crb-128.png
   - kind: DeploymentConfig
     apiGroup: apps.openshift.io
     versions: [v1]
     icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/deploy-128.png
 
-clusters:
-  # Domínio arquitetural inferido automaticamente no enriquecimento.
-  - labelKey: kubeoptix.io/domain
-    title: "Architecture Domain: {value}"
-    backgroundColor: "#E1F5FE"
-    recommended: true
-  # Agrupamento explícito de integrações externas.
-  - labelKey: app.kubernetes.io/component
-    title: "Component: {value}"
-    backgroundColor: "#E8F5E9"
-    recommended: true
-  # Nível 1: domínio do sistema (macroarquitetura).
-  - labelKey: app.kubernetes.io/part-of
-    title: "Domain: {value}"
-    backgroundColor: "#E3F2FD"
-    recommended: true
-  # Nível 2: aplicação principal.
-  - labelKey: app.kubernetes.io/name
-    title: "Application: {value}"
-    backgroundColor: "#ECE8F6"
-    recommended: true
-  # Compatibilidade com inventários legados.
-  - labelKey: app
-    title: "Application: {value}"
-    backgroundColor: "#ECE8F6"
-    recommended: false
-  # Nível 4: camada arquitetural para leitura humana.
-  - labelKey: app.kubernetes.io/tier
-    title: "Tier: {value}"
-    backgroundColor: "#FFF8E1"
-    recommended: true
-  # Escopo de release/tenant.
-  - labelKey: app.kubernetes.io/instance
-    title: "Instance: {value}"
-    backgroundColor: "#F3E5F5"
-    recommended: false
-  # Pods equivalentes agrupados pelo renderer; indica cardinalidade observada.
-  - labelKey: kubeoptix.io/pod-group-size
-    title: "Pod replicas observed: {value}"
-    backgroundColor: "#F1F8E9"
-    recommended: false
-  # Convenção Helm (quando chart injeta labels de release).
-  - labelKey: helm.sh/chart
-    title: "Chart: {value}"
-    backgroundColor: "#F5F5F5"
-    recommended: false
+# Sem clusters por label: mantém apenas o quadro do namespace e recursos soltos dentro dele.
+clusters: []

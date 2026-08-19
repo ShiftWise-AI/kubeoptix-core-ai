@@ -20,46 +20,20 @@ logger = logging.getLogger(__name__)
 _DEFAULT_TIMEOUT_SECONDS = 180
 KUBEDIAGRAMS_IMAGE = "docker.io/philippemerle/kubediagrams:latest"
 _ENV_ENRICH_LABELS = "KUBEOPTIX_DIAGRAM_ENRICH_LABELS"
-_OBSERVABILITY_MARKERS = (
-    "prometheus",
-    "grafana",
-    "alertmanager",
-    "jaeger",
-    "fluentd",
-    "fluent-bit",
-    "loki",
-    "kiali",
-    "otel",
-    "opentelemetry",
-)
-_MESSAGING_MARKERS = ("kafka", "rabbitmq", "activemq", "nats", "sqs", "sns")
-_DATABASE_MARKERS = (
-    "postgres",
-    "mysql",
-    "mariadb",
-    "mongodb",
-    "oracle",
-    "redis",
-    "db",
-    "rds",
-)
-_INGRESS_MARKERS = ("ingress", "route", "gateway", "istio")
-_CONTROL_PLANE_MARKERS = (
-    "kube-apiserver",
-    "apiserver",
-    "etcd",
-    "controller-manager",
-    "scheduler",
-    "openshift-console",
-)
-_EXTERNAL_SERVICE_MARKERS = (
-    "external",
-    "third-party",
-    "thirdparty",
-    "rds",
-    "cloud",
-    "saas",
-    "public",
+_EXTERNAL_NAMESPACE = "external"
+_CLUSTERING_LABEL_KEYS = (
+    "app.kubernetes.io/instance",
+    "app.kubernetes.io/name",
+    "app.kubernetes.io/component",
+    "app.kubernetes.io/tier",
+    "app.kubernetes.io/part-of",
+    "app",
+    "component",
+    "tier",
+    "release",
+    "helm.sh/chart",
+    "chart",
+    "kubeoptix.io/domain",
 )
 _POD_DEPLOYMENT_PATTERN = re.compile(r"^(.+)-[a-f0-9]{8,10}-[a-z0-9]{5}$")
 _POD_REPLICASET_PATTERN = re.compile(r"^(.+)-[a-f0-9]{8,10}$")
@@ -200,124 +174,83 @@ class KubeDiagramsRenderer:
             return default
         return raw.strip().lower() in {"1", "true", "yes", "on"}
 
-    def _tier_from_kind(self, kind: str) -> str:
-        k = kind.lower()
-        if k in {"service", "route", "ingress", "networkpolicy"}:
-            return "network"
-        if k in {"configmap", "secret", "persistentvolumeclaim", "persistentvolume", "storageclass"}:
-            return "platform"
-        if k in {"serviceaccount", "role", "rolebinding", "clusterrole", "clusterrolebinding"}:
-            return "security"
-        if k in {"horizontalpodautoscaler", "verticalpodautoscaler", "poddisruptionbudget"}:
-            return "operations"
-        return "workload"
+    def _strip_clustering_labels(self, labels: dict) -> None:
+        for key in _CLUSTERING_LABEL_KEYS:
+            labels.pop(key, None)
 
-    def _classify_component(self, kind: str, name: str, hint: str) -> str:
-        context = f"{name} {hint}".lower()
-        if any(marker in context for marker in _OBSERVABILITY_MARKERS):
-            return "observability"
-        if any(marker in context for marker in _MESSAGING_MARKERS):
-            return "messaging"
-        if any(marker in context for marker in _DATABASE_MARKERS):
-            return "data"
-        if any(marker in context for marker in _INGRESS_MARKERS):
-            return "ingress"
+    def _is_external_service(self, document: dict) -> bool:
+        if document.get("kind") != "Service":
+            return False
+        spec = document.get("spec")
+        if not isinstance(spec, dict):
+            return False
+        if spec.get("type") == "ExternalName" and spec.get("externalName"):
+            return True
+        return False
 
-        k = kind.lower()
-        if k in {"deployment", "statefulset", "daemonset", "deploymentconfig"}:
-            return "workload"
-        if k in {"job", "cronjob"}:
-            return "batch"
-        if k in {"configmap", "secret"}:
-            return "configuration"
-        if k in {"persistentvolumeclaim", "persistentvolume", "storageclass"}:
-            return "storage"
-        if k in {"serviceaccount", "role", "rolebinding", "clusterrole", "clusterrolebinding"}:
-            return "security"
-        if k in {"service", "route", "ingress", "networkpolicy"}:
-            return "networking"
-        if k in {"horizontalpodautoscaler", "verticalpodautoscaler", "poddisruptionbudget"}:
-            return "operations"
-        return hint.lower() if hint else "resource"
-
-    def _classify_tier(self, kind: str, name: str, component: str) -> str:
-        context = f"{name} {component}".lower()
-        if any(marker in context for marker in _OBSERVABILITY_MARKERS):
-            return "observability"
-        if any(marker in context for marker in _MESSAGING_MARKERS):
-            return "integration"
-        if any(marker in context for marker in _DATABASE_MARKERS):
-            return "data"
-        if any(marker in context for marker in _INGRESS_MARKERS):
-            return "edge"
-        return self._tier_from_kind(kind)
-
-    def _classify_domain(self, kind: str, name: str, component: str, tier: str) -> str:
-        context = f"{kind} {name} {component} {tier}".lower()
-        if any(marker in context for marker in _CONTROL_PLANE_MARKERS):
-            return "control-plane"
-        if "observability" in context:
-            return "observability-management"
-        if "external-services" in context:
-            return "external-services"
-        if "edge" in context or "network" in context or "ingress" in context:
-            return "networking-services"
-        if "security" in context or "rbac" in context:
-            return "security-identity"
-        if "storage" in context or "data" in context:
-            return "storage-data"
-        return "workloads-runtime"
-
-    def _derive_default_labels(self, manifest: dict, source_path: Path) -> dict[str, str]:
-        metadata = manifest.get("metadata") if isinstance(manifest, dict) else {}
-        metadata = metadata if isinstance(metadata, dict) else {}
-        name = str(metadata.get("name") or source_path.stem)
-        kind = str(manifest.get("kind") or "Resource")
-        spec = manifest.get("spec") if isinstance(manifest, dict) else {}
-        spec = spec if isinstance(spec, dict) else {}
-
-        parts = source_path.parts
-        app_name = name
-        component = kind.lower()
-        if "apps" in parts:
-            try:
-                app_idx = parts.index("apps")
-                if app_idx + 1 < len(parts):
-                    app_name = parts[app_idx + 1]
-                if app_idx + 2 < len(parts):
-                    component = parts[app_idx + 2].rstrip("s")
-            except ValueError:
-                pass
-        elif "resources" in parts:
-            try:
-                res_idx = parts.index("resources")
-                if res_idx + 1 < len(parts):
-                    component = parts[res_idx + 1].split(".")[0]
-            except ValueError:
-                pass
-
-        component_label = self._classify_component(kind, name, component)
-        tier_label = self._classify_tier(kind, name, component_label)
-
-        external_name = str(spec.get("externalName") or "")
-        if external_name:
-            component_label = "external-services"
-            tier_label = "edge"
-        elif any(marker in f"{name} {component_label}".lower() for marker in _EXTERNAL_SERVICE_MARKERS):
-            if tier_label not in {"observability", "data"}:
-                component_label = "external-services"
-                tier_label = "edge"
-
-        domain_label = self._classify_domain(kind, name, component_label, tier_label)
-
+    def _external_peer_manifest(self, service: dict) -> dict:
+        spec = service.get("spec") if isinstance(service.get("spec"), dict) else {}
+        external_name = str(spec.get("externalName") or "external")
+        metadata = service.get("metadata") if isinstance(service.get("metadata"), dict) else {}
+        service_name = str(metadata.get("name") or external_name)
+        peer_name = re.sub(r"[^a-zA-Z0-9-]+", "-", external_name).strip("-").lower()[:63] or "peer"
         return {
-            "app.kubernetes.io/name": app_name,
-            "app.kubernetes.io/component": component_label,
-            "app.kubernetes.io/tier": tier_label,
-            "app.kubernetes.io/part-of": self._namespace,
-            "app.kubernetes.io/instance": self._namespace,
-            "kubeoptix.io/domain": domain_label,
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {
+                "name": peer_name,
+                "namespace": _EXTERNAL_NAMESPACE,
+                "labels": {
+                    "kubeoptix.io/external-peer": service_name,
+                },
+            },
+            "spec": {
+                "type": "ExternalName",
+                "externalName": external_name,
+            },
         }
+
+    def _collect_external_peer_manifests(self, manifests: tuple[Path, ...]) -> list[dict]:
+        peers: list[dict] = []
+        seen: set[str] = set()
+        for source in manifests:
+            try:
+                docs = list(yaml.safe_load_all(source.read_text(encoding="utf-8")))
+            except (OSError, yaml.YAMLError):
+                continue
+            for document in docs:
+                if not isinstance(document, dict) or not self._is_external_service(document):
+                    continue
+                peer = self._external_peer_manifest(document)
+                peer_name = peer["metadata"]["name"]
+                if peer_name in seen:
+                    continue
+                seen.add(peer_name)
+                peers.append(peer)
+        return peers
+
+    def _normalize_manifest_document(self, document: dict) -> bool:
+        if not isinstance(document, dict):
+            return False
+        metadata = document.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+            document["metadata"] = metadata
+        labels = metadata.get("labels")
+        if not isinstance(labels, dict):
+            labels = {}
+            metadata["labels"] = labels
+
+        changed = False
+        if metadata.get("namespace") in (None, ""):
+            metadata["namespace"] = self._namespace
+            changed = True
+
+        before = set(labels)
+        self._strip_clustering_labels(labels)
+        if set(labels) != before:
+            changed = True
+        return changed
 
     def _enrich_manifest_yaml_text(self, content: str, source_path: Path) -> str | None:
         try:
@@ -333,21 +266,8 @@ class KubeDiagramsRenderer:
             if not isinstance(document, dict):
                 normalized.append(document)
                 continue
-            metadata = document.get("metadata")
-            if not isinstance(metadata, dict):
-                metadata = {}
-                document["metadata"] = metadata
+            if self._normalize_manifest_document(document):
                 changed = True
-            labels = metadata.get("labels")
-            if not isinstance(labels, dict):
-                labels = {}
-                metadata["labels"] = labels
-                changed = True
-
-            for key, value in self._derive_default_labels(document, source_path).items():
-                if key not in labels or labels.get(key) in (None, ""):
-                    labels[key] = value
-                    changed = True
             normalized.append(document)
 
         if not changed:
@@ -410,6 +330,7 @@ class KubeDiagramsRenderer:
         enriched_paths: list[Path] = []
         changed = False
         pod_count_by_path, pod_representatives = self._collect_pod_grouping(manifests)
+        external_peers = self._collect_external_peer_manifests(manifests)
 
         for idx, source in enumerate(manifests):
             raw_source = str(source).lower()
@@ -461,6 +382,15 @@ class KubeDiagramsRenderer:
 
             target = output_root / f"{idx:04d}_{source.name}"
             target.write_text(enriched, encoding="utf-8")
+            enriched_paths.append(target)
+            changed = True
+
+        for peer_idx, peer in enumerate(external_peers):
+            target = output_root / f"ext_{peer_idx:04d}_{peer['metadata']['name']}.yaml"
+            target.write_text(
+                yaml.safe_dump(peer, sort_keys=False, allow_unicode=False),
+                encoding="utf-8",
+            )
             enriched_paths.append(target)
             changed = True
 
@@ -517,8 +447,6 @@ class KubeDiagramsRenderer:
                 "png",
                 "-o",
                 str(probe_output),
-                "-n",
-                self._namespace,
                 str(manifest),
             ]
             try:
@@ -613,8 +541,6 @@ class KubeDiagramsRenderer:
             "png",
             "-o",
             str(output_path),
-            "-n",
-            self._namespace,
             *(
                 self._config_args(container=False)
                 if use_config
@@ -663,8 +589,6 @@ class KubeDiagramsRenderer:
             "png",
             "-o",
             container_output,
-            "-n",
-            self._namespace,
             *(
                 self._config_args(container=True)
                 if use_config
