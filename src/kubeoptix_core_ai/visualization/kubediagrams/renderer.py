@@ -6,6 +6,7 @@ import logging
 import os
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -110,10 +111,33 @@ class KubeDiagramsRenderer:
 
         output_path = self._output_path(viz_id)
         if not self._invoke_kube_diagrams(valid_manifests, output_path):
+            if self._is_yaml_parse_error(self._last_error) and len(valid_manifests) > 1:
+                filtered = self._filter_manifests_by_kubediagrams_parse(valid_manifests)
+                if filtered and len(filtered) < len(valid_manifests):
+                    logger.warning(
+                        "KubeDiagrams: reprocessando %s com %d/%d manifests após excluir YAMLs inválidos para o parser do kube-diagrams",
+                        viz_id,
+                        len(filtered),
+                        len(valid_manifests),
+                    )
+                    self._set_error(None)
+                    if self._invoke_kube_diagrams(filtered, output_path):
+                        return self._relative_path(viz_id)
             if self._last_error is None:
                 self._set_error("falha não detalhada ao executar KubeDiagrams")
             return None
         return self._relative_path(viz_id)
+
+    def _is_yaml_parse_error(self, error: str | None) -> bool:
+        if not error:
+            return False
+        markers = (
+            "yaml.safe_load_all",
+            "yaml.parser.ParserError",
+            "yaml.scanner.ScannerError",
+            "construct_document",
+        )
+        return any(marker in error for marker in markers)
 
     def _filter_parseable_manifests(self, manifests: tuple[Path, ...]) -> tuple[Path, ...]:
         valid: list[Path] = []
@@ -138,6 +162,69 @@ class KubeDiagramsRenderer:
                 len(valid),
                 len(manifests),
             )
+        return tuple(valid)
+
+    def _filter_manifests_by_kubediagrams_parse(
+        self, manifests: tuple[Path, ...]
+    ) -> tuple[Path, ...]:
+        """Filtra manifests que o parser interno do `kube-diagrams` rejeita."""
+        executable = find_kube_diagrams_executable()
+        if executable is None or shutil.which("dot") is None:
+            return manifests
+
+        valid: list[Path] = []
+        for manifest in manifests:
+            with tempfile.NamedTemporaryFile(
+                prefix="kd_probe_",
+                suffix=".png",
+                dir=self._assets_dir,
+                delete=False,
+            ) as tmp:
+                probe_output = Path(tmp.name)
+            command = [
+                executable,
+                "-f",
+                "png",
+                "-o",
+                str(probe_output),
+                "-n",
+                self._namespace,
+                str(manifest),
+            ]
+            try:
+                result = subprocess.run(
+                    command,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                logger.warning(
+                    "KubeDiagrams: erro ao validar manifest %s (%s); mantendo arquivo",
+                    manifest,
+                    exc,
+                )
+                valid.append(manifest)
+                continue
+            finally:
+                try:
+                    probe_output.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+            if result.returncode == 0:
+                valid.append(manifest)
+            else:
+                stderr = (result.stderr or "").strip()
+                if self._is_yaml_parse_error(stderr):
+                    logger.warning(
+                        "KubeDiagrams: manifest removido por erro de parse YAML interno: %s",
+                        manifest,
+                    )
+                else:
+                    # Erros não relacionados ao parser YAML não devem remover o manifest.
+                    valid.append(manifest)
         return tuple(valid)
 
     def _invoke_kube_diagrams(self, manifests: tuple[Path, ...], output_path: Path) -> bool:
