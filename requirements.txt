@@ -1,4 +1,4 @@
-# Dependências de runtime — aplicação completa (core + API)
+# Dependências de runtime — instala o pacote local com extras do pyproject.toml
 #
 # Local:
 #   python -m venv .venv && source .venv/bin/activate
@@ -8,6 +8,12 @@
 #   pip install -e ".[dev]"
 #
 # Container (Containerfile):
-#   python3.12 -m pip install -r requirements.txt
+#   pip install -r requirements.txt
+#
+# Graphviz (dot) é dependência de sistema para o CLI kube-diagrams (instalado no Containerfile).
+# Desenvolvimento local com diagramas:
+#   pip install pygraphviz==2.0.1
+#   pip install --no-deps KubeDiagrams==0.8.0
+#   pip install diagrams graphviz2drawio
 
 .

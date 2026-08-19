@@ -66,8 +66,6 @@ def render_visualization_block(viz: VisualizationSpec) -> str:
                 lines.append(f"- _… e mais {len(viz.yaml_sources) - 10} arquivo(s)_")
             lines.append("")
         lines.extend([_markdown_image(viz.title, viz.image_relpath), ""])
-    elif viz.mermaid:
-        lines.extend(["```mermaid", viz.mermaid, "```", ""])
 
     return "\n".join(lines)
 

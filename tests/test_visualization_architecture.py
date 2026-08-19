@@ -13,8 +13,6 @@ from kubeoptix_core_ai.report.pipeline import AssessmentPipeline
 from kubeoptix_core_ai.visualization.datasets.architecture import (
     build_namespace_architecture_diagram,
 )
-from kubeoptix_core_ai.visualization.mermaid import MermaidGenerator
-
 from tests.conftest import EXAMPLE_NAMESPACE
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -70,18 +68,6 @@ def test_architecture_diagram_focuses_on_communication(
     assert not any(label.startswith("Image/") for label in labels)
     assert not any(label.startswith("Registry/") for label in labels)
     assert not any(label.startswith("ConfigMap/") for label in labels)
-
-    mermaid = MermaidGenerator().render_flowchart(diagram)
-    assert "subgraph" in mermaid
-    assert "Pod/" in mermaid
-    assert "2/2 inst." in mermaid
-    assert "Service/" in mermaid
-    assert "Route/" in mermaid
-    assert "Cliente externo" in mermaid
-    assert "interno" in mermaid
-    assert "externo" in mermaid
-    assert "Secret/" not in mermaid
-    assert "Image/" not in mermaid
 
 
 def test_architecture_section_in_namespace_overview(

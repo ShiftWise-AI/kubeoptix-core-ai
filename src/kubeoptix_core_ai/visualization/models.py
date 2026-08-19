@@ -137,8 +137,6 @@ class VisualizationSpec(BaseModel):
     section: str
     status: VisualizationStatus
     image_relpath: str | None = None
-    mermaid: str | None = None
-    html: str | None = None
     diagram_engine: str | None = None
     yaml_sources: tuple[str, ...] = ()
     interpretation: str = ""

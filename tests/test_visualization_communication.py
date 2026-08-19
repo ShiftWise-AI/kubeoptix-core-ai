@@ -1,4 +1,4 @@
-"""Testes dos diagramas de comunicação Mermaid."""
+"""Testes dos diagramas de comunicação."""
 
 from __future__ import annotations
 
@@ -22,7 +22,6 @@ from kubeoptix_core_ai.visualization.kubediagrams import (
     manifest_index_for,
 )
 from kubeoptix_core_ai.visualization.kubediagrams.mapping import manifests_for_external_route
-from kubeoptix_core_ai.visualization.mermaid import MermaidGenerator
 from kubeoptix_core_ai.visualization.models import VisualizationStatus
 from kubeoptix_core_ai.visualization.png import PngRenderer
 
@@ -129,13 +128,10 @@ def test_external_diagrams_split_per_route(three_tier_tree: Path, tmp_path: Path
     assert f"Comunicação externa — {EXAMPLE_FRONTEND}" in titles
 
     for diagram in diagrams:
-        mermaid = MermaidGenerator().render_flowchart(diagram)
-        assert "flowchart LR" in mermaid
-        assert "Route/" in mermaid
-        assert "Service/" in mermaid
-        assert "wl_" in mermaid
-        frontend_id = f"wl_{EXAMPLE_FRONTEND.replace('-', '_')}"
-        assert frontend_id not in mermaid or diagram.title.endswith(EXAMPLE_FRONTEND)
+        node_types = {n.node_type for n in diagram.nodes}
+        assert "route" in node_types
+        assert "service" in node_types
+        assert "workload" in node_types
 
 
 def test_internal_diagrams_split_per_service(three_tier_tree: Path, tmp_path: Path) -> None:

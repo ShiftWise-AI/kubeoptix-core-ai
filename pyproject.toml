@@ -25,9 +25,6 @@ dev = [
     "pytest>=8.0,<9",
     "httpx>=0.27,<1",
 ]
-diagrams = [
-    "KubeDiagrams>=0.8,<1",
-]
 
 [project.scripts]
 kubeoptix-core-ai = "kubeoptix_core_ai.cli:main"

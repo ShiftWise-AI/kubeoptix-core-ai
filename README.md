@@ -12,24 +12,24 @@ visualizations, recommendations, and explicit confidence levels per item.
 - Python 3.11+
 - CPU only — no GPU, no external LLM, no paid APIs, no network at runtime
 - **matplotlib** — gráficos numéricos e de composição (incluído nas dependências)
-- **KubeDiagrams + Graphviz** (opcional) — diagrama de arquitetura do namespace com ícones K8s/OpenShift
+- **KubeDiagrams + Graphviz** — diagramas de arquitetura (CLI `kube-diagrams`; instalado no container; ver abaixo para dev local)
 
-### Diagramas de arquitetura (opcional)
+### Diagramas de arquitetura
 
-O relatório usa [KubeDiagrams](https://github.com/philippemerle/KubeDiagrams) para o diagrama
-**Arquitetura do namespace** quando `kube-diagrams` e o binário Graphviz `dot` estão disponíveis.
-Caso contrário, o agente gera um diagrama alternativo com matplotlib.
+O relatório invoca o CLI [KubeDiagrams](https://github.com/philippemerle/KubeDiagrams) (`kube-diagrams`).
+Requer Graphviz `dot` no PATH.
 
 ```bash
 # Fedora/RHEL
 sudo dnf install graphviz
 
-# Python (pode exigir graphviz-devel para compilar pygraphviz)
-pip install KubeDiagrams
-# ou: pip install -e ".[diagrams]"
+# CLI KubeDiagrams (pygraphviz 2.0.1 tem wheel; KubeDiagrams fixa 1.14 no metadata)
+pip install pygraphviz==2.0.1
+pip install --no-deps KubeDiagrams==0.8.0
+pip install diagrams graphviz2drawio
 ```
 
-Os gráficos de CPU, memória, QoS e findings continuam sendo gerados com **matplotlib**.
+No **container** (Containerfile), o CLI é instalado automaticamente com esse workaround.
 
 ## Installation
 

@@ -15,13 +15,15 @@ ENV KUBEOPTIX_UID=1001 \
     KUBEOPTIX_API_HOST=0.0.0.0 \
     KUBEOPTIX_API_PORT=8000 \
     KUBEOPTIX_METADATA_DIR=/app/data/assessment \
-    KUBEOPTIX_OUTPUT_DIR=/app/data/reports
+    KUBEOPTIX_OUTPUT_DIR=/app/data/reports \
+    MPLCONFIGDIR=/tmp/matplotlib
 
 ENV PATH=/app/.venv/bin:$PATH
 
 RUN dnf install -y \
     python3 \
     python3-pip \
+    graphviz \
     && dnf update -y \
     && dnf clean all \
     && groupadd -g "$KUBEOPTIX_UID" kubeoptix \
@@ -38,6 +40,9 @@ RUN find ./src -type d \( -name "__pycache__" -o -name ".pytest_cache" -o -name 
     && find ./src -type f \( -name "*.pyc" -o -name "*.pyo" -o -name "*~" -o -name ".DS_Store" \) -delete \
     && python3 -m venv "$VENV_DIR" \
     && "$VENV_DIR/bin/pip" install --upgrade pip \
+    && "$VENV_DIR/bin/pip" install --no-cache-dir "pygraphviz==2.0.1" \
+    && "$VENV_DIR/bin/pip" install --no-cache-dir --no-deps "KubeDiagrams==0.8.0" \
+    && "$VENV_DIR/bin/pip" install --no-cache-dir diagrams graphviz2drawio \
     && "$VENV_DIR/bin/pip" install --no-cache-dir -r requirements.txt \
     && chmod +x run-ocp.sh \
     && chown -R kubeoptix:kubeoptix /app \
