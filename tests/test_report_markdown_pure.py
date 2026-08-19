@@ -43,7 +43,7 @@ def assert_pure_markdown(content: str) -> None:
     for fragment in _FORBIDDEN_HTML_FRAGMENTS:
         assert fragment not in content, (
             f"Relatório contém HTML proibido ({fragment!r}). "
-            "Gráficos devem usar Mermaid ou tabelas Markdown."
+            "Gráficos devem usar imagens PNG ou tabelas Markdown."
         )
 
     prose = _prose_without_code(content)
@@ -75,16 +75,20 @@ def test_generated_report_is_pure_markdown(
     content = path.read_text(encoding="utf-8")
 
     assert_pure_markdown(content)
-    assert "```mermaid" in content
-    assert "xychart-beta" in content or "flowchart" in content or "pie title" in content
+    assert "data:image/png;base64," in content or "_assets/" in content
+    assert ".png)" in content or "data:image/png;base64," in content
 
 
 def test_markdown_generator_output_has_no_html(
     training_inventory_available: Path,
+    tmp_path: Path,
 ) -> None:
     """Valida o conteúdo retornado pelo gerador (não apenas o arquivo em disco)."""
     config = AnalyzerConfig.from_metadata_dir(training_inventory_available)
     bundle = AssessmentPipeline(config).run(TRAINING_NAMESPACE)
-    content = MarkdownReportGenerator().generate(bundle)
+    content = MarkdownReportGenerator().generate(
+        bundle,
+        assets_dir=tmp_path / "reports" / f"{TRAINING_NAMESPACE}_assets",
+    )
 
     assert_pure_markdown(content)

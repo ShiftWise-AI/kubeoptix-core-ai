@@ -1,4 +1,4 @@
-"""Modelos de dados para gráficos e diagramas Mermaid."""
+"""Modelos de dados para gráficos e diagramas do relatório."""
 
 from __future__ import annotations
 
@@ -136,8 +136,11 @@ class VisualizationSpec(BaseModel):
     question: str
     section: str
     status: VisualizationStatus
+    image_relpath: str | None = None
     mermaid: str | None = None
     html: str | None = None
+    diagram_engine: str | None = None
+    yaml_sources: tuple[str, ...] = ()
     interpretation: str = ""
     unavailable_reason: str | None = None
     provenance: tuple[ProvenanceRef, ...] = ()

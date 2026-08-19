@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from kubeoptix_core_ai.report.pipeline import AssessmentBundle
 from kubeoptix_core_ai.visualization.datasets import communication, composition, numeric, workload
+from kubeoptix_core_ai.visualization.diagram_renderer import DiagramRenderer
 from kubeoptix_core_ai.visualization.interpretation import interpret_visualization
-from kubeoptix_core_ai.visualization.mermaid import MermaidGenerator
+from kubeoptix_core_ai.visualization.kubediagrams.mapping import (
+    manifest_index_for,
+    manifests_for_external_route,
+    manifests_for_internal_service,
+    manifests_for_workload_dependencies,
+    manifests_for_workload_group,
+    manifests_for_workload_node_placement,
+)
 from kubeoptix_core_ai.visualization.models import (
     ChartDataset,
     CompositionDataset,
@@ -15,8 +25,7 @@ from kubeoptix_core_ai.visualization.models import (
     VisualizationStatus,
     VisualizationBundle,
 )
-
-_generator = MermaidGenerator()
+from kubeoptix_core_ai.visualization.png import PngRenderer
 
 
 def _collect_provenance_numeric(dataset: ChartDataset) -> tuple[ProvenanceRef, ...]:
@@ -47,8 +56,9 @@ def _spec_from_numeric(
     viz_id: str,
     section: str,
     dataset: ChartDataset,
+    renderer: PngRenderer | None,
 ) -> VisualizationSpec:
-    mermaid = _generator.render_numeric(dataset)
+    image_relpath = renderer.render_numeric(viz_id, dataset) if renderer else None
     provenance = _collect_provenance_numeric(dataset)
     interpretation = interpret_visualization(dataset)
     return VisualizationSpec(
@@ -57,7 +67,7 @@ def _spec_from_numeric(
         question=dataset.question,
         section=section,
         status=VisualizationStatus.AVAILABLE,
-        mermaid=mermaid,
+        image_relpath=image_relpath,
         interpretation=interpretation,
         provenance=provenance,
         dataset_kind="numeric",
@@ -68,8 +78,9 @@ def _spec_from_composition(
     viz_id: str,
     section: str,
     dataset: CompositionDataset,
+    renderer: PngRenderer | None,
 ) -> VisualizationSpec:
-    mermaid = _generator.render_composition(dataset)
+    image_relpath = renderer.render_composition(viz_id, dataset) if renderer else None
     provenance = _collect_provenance_composition(dataset)
     interpretation = interpret_visualization(dataset)
     return VisualizationSpec(
@@ -78,7 +89,7 @@ def _spec_from_composition(
         question=dataset.question,
         section=section,
         status=VisualizationStatus.AVAILABLE,
-        mermaid=mermaid,
+        image_relpath=image_relpath,
         interpretation=interpretation,
         provenance=provenance,
         dataset_kind="composition",
@@ -89,17 +100,31 @@ def _spec_from_flowchart(
     viz_id: str,
     section: str,
     dataset: FlowchartDataset,
+    manifests: tuple[Path, ...],
+    diagram_renderer: DiagramRenderer | None,
 ) -> VisualizationSpec:
-    mermaid = _generator.render_flowchart(dataset)
     provenance = _collect_provenance_flowchart(dataset)
     interpretation = interpret_visualization(dataset)
+
+    image_relpath: str | None = None
+    diagram_engine = None
+    yaml_sources: tuple[str, ...] = ()
+
+    if diagram_renderer is not None:
+        result = diagram_renderer.render_flowchart(viz_id, manifests, dataset)
+        image_relpath = result.image_relpath
+        diagram_engine = result.engine
+        yaml_sources = result.yaml_sources
+
     return VisualizationSpec(
         id=viz_id,
         title=dataset.title,
         question=dataset.question,
         section=section,
         status=VisualizationStatus.AVAILABLE,
-        mermaid=mermaid,
+        image_relpath=image_relpath,
+        diagram_engine=diagram_engine,
+        yaml_sources=yaml_sources,
         interpretation=interpretation,
         provenance=provenance,
         dataset_kind="flowchart",
@@ -127,13 +152,18 @@ def _unavailable(
     )
 
 
-def build_all_visualizations(bundle: AssessmentBundle) -> VisualizationBundle:
+def build_all_visualizations(
+    bundle: AssessmentBundle,
+    renderer: PngRenderer | None = None,
+    diagram_renderer: DiagramRenderer | None = None,
+) -> VisualizationBundle:
     specs: list[VisualizationSpec] = []
+    index = manifest_index_for(bundle) if diagram_renderer is not None else None
 
     # §4 — visão geral
     ns_chart = numeric.build_namespace_requests_vs_allocatable(bundle)
     if ns_chart:
-        specs.append(_spec_from_numeric("ns_requests_allocatable", "namespace_overview", ns_chart))
+        specs.append(_spec_from_numeric("ns_requests_allocatable", "namespace_overview", ns_chart, renderer))
     else:
         specs.append(
             _unavailable(
@@ -147,14 +177,23 @@ def build_all_visualizations(bundle: AssessmentBundle) -> VisualizationBundle:
 
     qos_chart = composition.build_qos_distribution(bundle)
     if qos_chart:
-        specs.append(_spec_from_composition("qos_distribution", "namespace_overview", qos_chart))
+        specs.append(_spec_from_composition("qos_distribution", "namespace_overview", qos_chart, renderer))
 
     # §5 — workloads
-    workload_diagrams = workload.build_workload_diagrams(bundle)
-    if workload_diagrams:
-        for idx, diagram in enumerate(workload_diagrams):
+    workload_groups = workload.iter_workload_diagram_groups(bundle)
+    if workload_groups:
+        for idx, (diagram, group_workloads) in enumerate(workload_groups):
+            manifests = ()
+            if index is not None:
+                manifests = manifests_for_workload_group(group_workloads, bundle, index)
             specs.append(
-                _spec_from_flowchart(f"workload_diagram_{idx}", "workloads", diagram)
+                _spec_from_flowchart(
+                    f"workload_diagram_{idx}",
+                    "workloads",
+                    diagram,
+                    manifests,
+                    diagram_renderer,
+                )
             )
     else:
         specs.append(
@@ -172,11 +211,17 @@ def build_all_visualizations(bundle: AssessmentBundle) -> VisualizationBundle:
     if external_diagrams:
         for diagram in external_diagrams:
             route_key = diagram.title.rsplit(" — ", 1)[-1]
+            route = next((r for r in bundle.context.routes if r.name == route_key), None)
+            manifests = ()
+            if index is not None and route is not None:
+                manifests = manifests_for_external_route(route, bundle, index)
             specs.append(
                 _spec_from_flowchart(
                     f"ext_comm_{route_key}",
                     "communication_external",
                     diagram,
+                    manifests,
+                    diagram_renderer,
                 )
             )
     else:
@@ -195,11 +240,17 @@ def build_all_visualizations(bundle: AssessmentBundle) -> VisualizationBundle:
     if internal_diagrams:
         for diagram in internal_diagrams:
             svc_key = diagram.title.rsplit(" — ", 1)[-1]
+            service = next((s for s in bundle.context.services if s.name == svc_key), None)
+            manifests = ()
+            if index is not None and service is not None:
+                manifests = manifests_for_internal_service(service, bundle, index)
             specs.append(
                 _spec_from_flowchart(
                     f"int_comm_{svc_key}",
                     "communication_internal",
                     diagram,
+                    manifests,
+                    diagram_renderer,
                 )
             )
     else:
@@ -218,11 +269,17 @@ def build_all_visualizations(bundle: AssessmentBundle) -> VisualizationBundle:
     if dependency_diagrams:
         for diagram in dependency_diagrams:
             wl_key = diagram.title.rsplit(" — ", 1)[-1]
+            wl = next((w for w in bundle.context.workloads if w.name == wl_key), None)
+            manifests = ()
+            if index is not None and wl is not None:
+                manifests = manifests_for_workload_dependencies(wl, bundle, index)
             specs.append(
                 _spec_from_flowchart(
                     f"ext_dep_{wl_key}",
                     "communication_dependencies",
                     diagram,
+                    manifests,
+                    diagram_renderer,
                 )
             )
     else:
@@ -245,7 +302,7 @@ def build_all_visualizations(bundle: AssessmentBundle) -> VisualizationBundle:
     ):
         chart = builder(bundle)
         if chart:
-            specs.append(_spec_from_numeric(viz_id, "cpu", chart))
+            specs.append(_spec_from_numeric(viz_id, "cpu", chart, renderer))
         else:
             specs.append(
                 _unavailable(viz_id, title, question, "cpu", "Valores de CPU não disponíveis nos workloads.")
@@ -259,7 +316,7 @@ def build_all_visualizations(bundle: AssessmentBundle) -> VisualizationBundle:
     ):
         chart = builder(bundle)
         if chart:
-            specs.append(_spec_from_numeric(viz_id, "memory", chart))
+            specs.append(_spec_from_numeric(viz_id, "memory", chart, renderer))
         else:
             specs.append(
                 _unavailable(viz_id, title, question, "memory", "Valores de memória não disponíveis nos workloads.")
@@ -267,7 +324,7 @@ def build_all_visualizations(bundle: AssessmentBundle) -> VisualizationBundle:
 
     # §8 — QoS
     if qos_chart:
-        specs.append(_spec_from_composition("qos_distribution_detail", "qos", qos_chart))
+        specs.append(_spec_from_composition("qos_distribution_detail", "qos", qos_chart, renderer))
     else:
         specs.append(
             _unavailable(
@@ -283,7 +340,18 @@ def build_all_visualizations(bundle: AssessmentBundle) -> VisualizationBundle:
     # §13 — workload × worknode
     placement = workload.build_workload_node_diagram(bundle)
     if placement:
-        specs.append(_spec_from_flowchart("workload_node_placement", "workload_node", placement))
+        manifests = ()
+        if index is not None:
+            manifests = manifests_for_workload_node_placement(bundle, index)
+        specs.append(
+            _spec_from_flowchart(
+                "workload_node_placement",
+                "workload_node",
+                placement,
+                manifests,
+                diagram_renderer,
+            )
+        )
     else:
         specs.append(
             _unavailable(
@@ -299,13 +367,13 @@ def build_all_visualizations(bundle: AssessmentBundle) -> VisualizationBundle:
     # §15 — findings
     severity = composition.build_severity_distribution(bundle)
     if severity:
-        specs.append(_spec_from_composition("findings_severity", "findings", severity))
+        specs.append(_spec_from_composition("findings_severity", "findings", severity, renderer))
     category = composition.build_category_distribution(bundle)
     if category:
-        specs.append(_spec_from_composition("findings_category", "findings", category))
+        specs.append(_spec_from_composition("findings_category", "findings", category, renderer))
 
     app_groups = composition.build_workloads_by_app_group(bundle)
     if app_groups:
-        specs.append(_spec_from_composition("workloads_app_group", "workloads", app_groups))
+        specs.append(_spec_from_composition("workloads_app_group", "workloads", app_groups, renderer))
 
     return VisualizationBundle(visualizations=tuple(specs))

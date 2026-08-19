@@ -146,7 +146,10 @@ def build_workload_diagram(
     )
 
 
-def build_workload_diagrams(bundle: AssessmentBundle) -> tuple[FlowchartDataset, ...]:
+def iter_workload_diagram_groups(
+    bundle: AssessmentBundle,
+) -> tuple[tuple[FlowchartDataset, tuple[Workload, ...]], ...]:
+    """Pares (diagrama, workloads) para renderização com KubeDiagrams."""
     workloads = bundle.context.workloads
     services = bundle.context.services
     if not workloads:
@@ -156,25 +159,26 @@ def build_workload_diagrams(bundle: AssessmentBundle) -> tuple[FlowchartDataset,
     for wl in workloads:
         by_group[wl.app_group].append(wl)
 
-    diagrams: list[FlowchartDataset] = []
+    groups: list[tuple[FlowchartDataset, tuple[Workload, ...]]] = []
     if len(by_group) == 1 and len(workloads) <= _MAX_NODES_PER_DIAGRAM:
         diagram = build_workload_diagram(
             workloads, services, partition_key="all", title_suffix=""
         )
         if diagram is not None:
-            diagrams.append(diagram)
+            groups.append((diagram, workloads))
     else:
         for group, group_workloads in sorted(by_group.items()):
+            wl_tuple = tuple(group_workloads)
             diagram = build_workload_diagram(
-                tuple(group_workloads),
-                services,
-                partition_key=group,
-                title_suffix=group,
+                wl_tuple, services, partition_key=group, title_suffix=group
             )
             if diagram is not None:
-                diagrams.append(diagram)
+                groups.append((diagram, wl_tuple))
+    return tuple(groups)
 
-    return tuple(diagrams)
+
+def build_workload_diagrams(bundle: AssessmentBundle) -> tuple[FlowchartDataset, ...]:
+    return tuple(diagram for diagram, _ in iter_workload_diagram_groups(bundle))
 
 
 def _node_diagram_node(node: WorkNode) -> DiagramNode:

@@ -40,10 +40,18 @@ from kubeoptix_core_ai.report.pipeline import AssessmentBundle
 from kubeoptix_core_ai.visualization.datasets.architecture import (
     build_namespace_architecture_diagram,
 )
-from kubeoptix_core_ai.visualization.markdown import render_section_visualizations
-from kubeoptix_core_ai.visualization.mermaid import MermaidGenerator
-from kubeoptix_core_ai.visualization.pipeline import VisualizationPipeline
-
+from kubeoptix_core_ai.visualization.diagram_renderer import DiagramRenderer
+from kubeoptix_core_ai.visualization.kubediagrams.mapping import manifests_for_namespace_architecture
+from kubeoptix_core_ai.visualization.markdown import (
+    _markdown_image,
+    embed_markdown_images,
+    render_section_visualizations,
+)
+from kubeoptix_core_ai.visualization.pipeline import (
+    VisualizationPipeline,
+    create_renderers,
+    report_assets_prefix,
+)
 REPORT_FILE_ENCODING = "utf-8"
 REPORT_FILE_LANGUAGE = "pt-BR"
 
@@ -488,17 +496,19 @@ def _runtime_metrics_table(workloads: tuple[Workload, ...]) -> str:
     )
 
 
-def _namespace_architecture_section(bundle: AssessmentBundle) -> str:
-    """Diagrama Mermaid de arquitetura baseado exclusivamente no inventário YAML."""
-    diagram = build_namespace_architecture_diagram(bundle)
-    if diagram is None:
-        return (
-            "> Não foram identificadas relações de comunicação suficientes no "
-            "inventário YAML para representar a arquitetura deste namespace.\n"
-        )
+def _architecture_legend_kubediagrams() -> str:
+    return (
+        "**Diagrama gerado com [KubeDiagrams](https://github.com/philippemerle/KubeDiagrams)** "
+        "a partir dos manifests YAML do namespace.\n\n"
+        "- **Ícones** — recursos Kubernetes/OpenShift padrão (Deployment, Service, Route, etc.).\n"
+        "- **Agrupamentos** — namespace e labels de aplicação (`app`, `app.kubernetes.io/name`).\n"
+        "- **Arestas** — relações declaradas nos YAMLs (owner, selector, reference).\n\n"
+        "> O diagrama reflete o inventário coletado, não o estado em tempo real do cluster.\n"
+    )
 
-    mermaid = MermaidGenerator().render_flowchart(diagram)
-    legend = (
+
+def _architecture_legend_custom() -> str:
+    return (
         "**Legenda dos grupos:**\n\n"
         "- **Namespace atual** — Pods (workloads), Services e Routes do namespace.\n"
         "- **Outros namespaces** — dependências com namespace explícito nos YAMLs.\n"
@@ -512,12 +522,59 @@ def _namespace_architecture_section(bundle: AssessmentBundle) -> str:
         "> O diagrama foca em fluxos de comunicação. Secrets, imagens de container "
         "e ConfigMaps não são exibidos — apenas relações evidenciadas no inventário YAML.\n"
     )
-    return (
-        f"{legend}\n"
-        "```mermaid\n"
-        f"{mermaid}\n"
-        "```\n"
+
+
+def _namespace_architecture_section(
+    bundle: AssessmentBundle,
+    diagram_renderer: DiagramRenderer | None,
+) -> str:
+    """Diagrama de arquitetura do namespace (KubeDiagrams padrão, fallback matplotlib)."""
+    diagram = build_namespace_architecture_diagram(bundle)
+    manifests = manifests_for_namespace_architecture(bundle)
+
+    if not manifests and diagram is None:
+        return (
+            "> Não foram identificadas relações de comunicação suficientes no "
+            "inventário YAML para representar a arquitetura deste namespace.\n"
+        )
+
+    image_path: str | None = None
+    used_kubediagrams = False
+    yaml_sources: tuple[str, ...] = ()
+
+    if diagram_renderer is not None:
+        result = diagram_renderer.render_flowchart(
+            "namespace_architecture",
+            manifests,
+            diagram,
+        )
+        image_path = result.image_relpath
+        used_kubediagrams = result.engine == "kubediagrams"
+        yaml_sources = result.yaml_sources
+
+    if image_path is None:
+        return (
+            "> Diagrama de arquitetura indisponível: KubeDiagrams não instalado ou "
+            "falha na renderização, e não há relações suficientes para o diagrama "
+            "alternativo.\n"
+        )
+
+    legend = (
+        _architecture_legend_kubediagrams()
+        if used_kubediagrams
+        else _architecture_legend_custom()
     )
+    lines = [legend, ""]
+    if yaml_sources:
+        lines.append("**Manifests YAML utilizados:**")
+        for source in yaml_sources[:12]:
+            lines.append(f"- `{source}`")
+        if len(yaml_sources) > 12:
+            lines.append(f"- _… e mais {len(yaml_sources) - 12} arquivo(s)_")
+        lines.append("")
+    lines.append(_markdown_image("Arquitetura do namespace", image_path))
+    lines.append("")
+    return "\n".join(lines)
 
 
 def _namespace_totals_table(bundle: AssessmentBundle) -> str:
@@ -1217,12 +1274,26 @@ def _prepare_report_content(content: str) -> str:
 class MarkdownReportGenerator:
     """Monta relatório Markdown completo a partir de um ``AssessmentBundle``."""
 
-    def generate(self, bundle: AssessmentBundle) -> str:
+    def generate(
+        self,
+        bundle: AssessmentBundle,
+        *,
+        assets_dir: Path | None = None,
+    ) -> str:
         report = bundle.analysis
         ctx = bundle.context
         diag = bundle.diagnostic
         section_ids = finding_section_ids(report.findings)
-        visualizations = VisualizationPipeline().build(bundle)
+        assets_prefix = report_assets_prefix(report.namespace)
+        renderers = (
+            create_renderers(bundle, assets_dir, assets_prefix=assets_prefix)
+            if assets_dir is not None
+            else None
+        )
+        visualizations = VisualizationPipeline().build(
+            bundle,
+            renderers=renderers,
+        )
         ns = report.namespace
         generated = bundle.generated_at.strftime("%d/%m/%Y %H:%M UTC")
 
@@ -1304,7 +1375,12 @@ class MarkdownReportGenerator:
         sections.append("\n### Comparativo request / limit / uso (snapshot)\n")
         sections.append(_resource_balance_table(bundle))
         sections.append("\n### Arquitetura\n")
-        sections.append(_namespace_architecture_section(bundle))
+        sections.append(
+            _namespace_architecture_section(
+                bundle,
+                renderers.diagram if renderers is not None else None,
+            )
+        )
         sections.append("\n### Visualizações\n")
         sections.append(render_section_visualizations(visualizations.by_section("namespace_overview")))
 
@@ -1519,10 +1595,16 @@ class MarkdownReportGenerator:
 def write_assessment_report(
     bundle: AssessmentBundle,
     output_dir: Path,
+    *,
+    inline_images: bool = True,
 ) -> Path:
-    """Gera `<namespace>.md` no diretório de saída (UTF-8, pt-BR)."""
+    """Gera `<namespace>.md` e pasta `<namespace>_assets/` no diretório de saída."""
     output_dir.mkdir(parents=True, exist_ok=True)
+    assets_prefix = report_assets_prefix(bundle.analysis.namespace)
+    assets_dir = output_dir / assets_prefix
     path = output_dir / f"{bundle.analysis.namespace}.md"
-    content = MarkdownReportGenerator().generate(bundle)
+    content = MarkdownReportGenerator().generate(bundle, assets_dir=assets_dir)
+    if inline_images:
+        content = embed_markdown_images(content, markdown_dir=output_dir)
     path.write_bytes(content.encode(REPORT_FILE_ENCODING))
     return path
