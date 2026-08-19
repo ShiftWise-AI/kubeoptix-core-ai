@@ -19,10 +19,11 @@ class DiagramRenderResult:
     image_relpath: str | None
     engine: str | None
     yaml_sources: tuple[str, ...] = ()
+    failure_reason: str | None = None
 
 
 class DiagramRenderer:
-    """Renderiza diagramas via KubeDiagrams; usa matplotlib apenas como fallback."""
+    """Renderiza diagramas de arquitetura/comunicação exclusivamente via KubeDiagrams."""
 
     def __init__(
         self,
@@ -51,18 +52,21 @@ class DiagramRenderer:
                     engine="kubediagrams",
                     yaml_sources=yaml_sources,
                 )
+            reason = self._kubediagrams.last_error
             logger.info(
-                "KubeDiagrams indisponível ou falhou para %s; tentando fallback matplotlib",
+                "KubeDiagrams indisponível ou falhou para %s; diagrama não será renderizado. Motivo: %s",
                 viz_id,
+                reason or "(não informado)",
+            )
+            return DiagramRenderResult(
+                image_relpath=None,
+                engine=None,
+                yaml_sources=yaml_sources,
+                failure_reason=reason,
             )
 
-        if fallback_dataset is not None:
-            image_path = self._matplotlib.render_flowchart(viz_id, fallback_dataset)
-            if image_path is not None:
-                return DiagramRenderResult(
-                    image_relpath=image_path,
-                    engine="matplotlib",
-                    yaml_sources=yaml_sources,
-                )
+        # Regra de produto: diagramas de arquitetura/comunicação não devem usar
+        # estilo alternativo; apenas KubeDiagrams é aceito para flowcharts.
+        _ = fallback_dataset
 
         return DiagramRenderResult(image_relpath=None, engine=None, yaml_sources=yaml_sources)

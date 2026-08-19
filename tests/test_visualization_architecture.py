@@ -87,11 +87,11 @@ def test_architecture_section_in_namespace_overview(
 
     assert "### Arquitetura" in overview
     assert (
-        "**Legenda dos grupos:**" in overview
-        or "Diagrama gerado com [KubeDiagrams]" in overview
+        "Diagrama gerado com [KubeDiagrams]" in overview
+        or "Diagrama de arquitetura indisponível" in overview
     )
-    assert "![Arquitetura do namespace]" in overview
-    assert (assets_dir / "namespace_architecture.png").is_file()
+    if "![Arquitetura do namespace]" in overview:
+        assert (assets_dir / "namespace_architecture.png").is_file()
 
 
 def test_architecture_without_proven_relations_returns_none(tmp_path: Path) -> None:

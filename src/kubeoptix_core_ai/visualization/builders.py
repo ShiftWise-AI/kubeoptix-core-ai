@@ -115,6 +115,37 @@ def _spec_from_flowchart(
         image_relpath = result.image_relpath
         diagram_engine = result.engine
         yaml_sources = result.yaml_sources
+        failure_reason = result.failure_reason
+    else:
+        failure_reason = None
+
+    if image_relpath is None:
+        reason_text = (
+            f"KubeDiagrams indisponível/falhou ({failure_reason})."
+            if failure_reason
+            else "KubeDiagrams indisponível/falhou."
+        )
+        return VisualizationSpec(
+            id=viz_id,
+            title=dataset.title,
+            question=dataset.question,
+            section=section,
+            status=VisualizationStatus.UNAVAILABLE,
+            unavailable_reason=(
+                "Diagrama não gerado: "
+                f"{reason_text} "
+                "ou "
+                "não há manifests YAML suficientes para renderização."
+            ),
+            interpretation=(
+                "**Limitação:** "
+                f"{reason_text} "
+                "ou "
+                "não há manifests YAML suficientes para renderização."
+            ),
+            provenance=provenance,
+            dataset_kind="flowchart",
+        )
 
     return VisualizationSpec(
         id=viz_id,
