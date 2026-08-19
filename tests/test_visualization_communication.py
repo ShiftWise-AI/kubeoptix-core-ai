@@ -16,8 +16,15 @@ from kubeoptix_core_ai.visualization.datasets.communication import (
     build_external_dependencies_diagrams,
     build_internal_communication_diagrams,
 )
+from kubeoptix_core_ai.visualization.diagram_renderer import DiagramRenderer
+from kubeoptix_core_ai.visualization.kubediagrams import (
+    KubeDiagramsRenderer,
+    manifest_index_for,
+)
+from kubeoptix_core_ai.visualization.kubediagrams.mapping import manifests_for_external_route
 from kubeoptix_core_ai.visualization.mermaid import MermaidGenerator
 from kubeoptix_core_ai.visualization.models import VisualizationStatus
+from kubeoptix_core_ai.visualization.png import PngRenderer
 
 from tests.conftest import EXAMPLE_NAMESPACE
 
@@ -176,7 +183,19 @@ def test_no_frontend_to_backend_edge_in_diagrams(
         worknodes_path=tmp_path / "worknodes",
     )
     bundle = AssessmentPipeline(config).run(EXAMPLE_NAMESPACE)
-    viz = build_all_visualizations(bundle)
+    index = manifest_index_for(bundle)
+    assets_dir = tmp_path / "comm_assets"
+    png_renderer = PngRenderer(assets_dir, path_prefix="comm_assets")
+    diagram_renderer = DiagramRenderer(
+        KubeDiagramsRenderer(assets_dir, namespace=EXAMPLE_NAMESPACE, path_prefix="comm_assets"),
+        png_renderer,
+        manifest_index=index,
+    )
+    viz = build_all_visualizations(
+        bundle,
+        renderer=png_renderer,
+        diagram_renderer=diagram_renderer,
+    )
 
     comm_viz = [
         v
@@ -184,6 +203,11 @@ def test_no_frontend_to_backend_edge_in_diagrams(
         if v.section.startswith("communication_") and v.status == VisualizationStatus.AVAILABLE
     ]
     for v in comm_viz:
-        assert v.mermaid
-        frontend_slug = EXAMPLE_FRONTEND.replace("-", "_")
-        assert f"wl_{frontend_slug} --> wl_backend" not in v.mermaid.replace("-", "_")
+        assert v.image_relpath
+        assert v.yaml_sources
+
+    internal = build_internal_communication_diagrams(bundle)
+    for diagram in internal:
+        edge_pairs = {(edge.source_id, edge.target_id) for edge in diagram.edges}
+        assert ("wl_example-frontend", "wl_backend") not in edge_pairs
+        assert ("wl_example_frontend", "wl_backend") not in edge_pairs

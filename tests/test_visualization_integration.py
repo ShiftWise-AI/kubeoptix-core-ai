@@ -61,18 +61,27 @@ def test_visualization_bundle_includes_numeric_and_flowcharts(
         worknodes_path=tmp_path / "worknodes",
     )
     bundle = AssessmentPipeline(config).run(EXAMPLE_NAMESPACE)
-    viz = VisualizationPipeline().build(bundle)
+    assets_dir = tmp_path / "viz_assets"
+    viz = VisualizationPipeline().build(
+        bundle,
+        assets_dir=assets_dir,
+        assets_prefix="viz_assets",
+    )
 
     available = [v for v in viz.visualizations if v.status == VisualizationStatus.AVAILABLE]
     assert any(v.id == "cpu_request" for v in available)
     assert any(v.id.startswith("ext_comm_") for v in available)
     assert any(v.id == "workload_node_placement" for v in available)
     for v in available:
-        assert v.mermaid
+        assert v.image_relpath
         assert v.provenance
+    flowcharts = [v for v in available if v.dataset_kind == "flowchart"]
+    assert flowcharts
+    assert all(v.yaml_sources for v in flowcharts)
+    assert list(assets_dir.glob("*.png"))
 
 
-def test_markdown_contains_mermaid_blocks(
+def test_markdown_contains_png_images(
     full_analysis_tree: Path, tmp_path: Path
 ) -> None:
     config = AnalyzerConfig(
@@ -80,12 +89,12 @@ def test_markdown_contains_mermaid_blocks(
         worknodes_path=tmp_path / "worknodes",
     )
     bundle = AssessmentPipeline(config).run(EXAMPLE_NAMESPACE)
-    md = MarkdownReportGenerator().generate(bundle)
+    assets_dir = tmp_path / "assets"
+    md = MarkdownReportGenerator().generate(bundle, assets_dir=assets_dir)
 
-    assert "```mermaid" in md
-    assert "xychart-beta" in md
+    assert "![CPU request por workload]" in md or ".png)" in md
     assert "### Visualizações" in md
-    assert "Visualização indisponível" in md or "flowchart" in md
+    assert list(assets_dir.glob("*.png"))
 
 
 def test_external_communication_skipped_without_routes(tmp_path: Path) -> None:

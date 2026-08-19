@@ -92,16 +92,20 @@ def test_architecture_section_in_namespace_overview(
         worknodes_path=tmp_path / "worknodes",
     )
     bundle = AssessmentPipeline(config).run(EXAMPLE_NAMESPACE)
-    md = MarkdownReportGenerator().generate(bundle)
+    assets_dir = tmp_path / "assets"
+    md = MarkdownReportGenerator().generate(bundle, assets_dir=assets_dir)
 
     overview_start = md.index("## 5. Visão geral do namespace")
     workloads_start = md.index("## 6. Workloads identificados")
     overview = md[overview_start:workloads_start]
 
     assert "### Arquitetura" in overview
-    assert "**Legenda dos grupos:**" in overview
-    assert "```mermaid" in overview
-    assert "fluxos de comunicação" in overview
+    assert (
+        "**Legenda dos grupos:**" in overview
+        or "Diagrama gerado com [KubeDiagrams]" in overview
+    )
+    assert "![Arquitetura do namespace]" in overview
+    assert (assets_dir / "namespace_architecture.png").is_file()
 
 
 def test_architecture_without_proven_relations_returns_none(tmp_path: Path) -> None:

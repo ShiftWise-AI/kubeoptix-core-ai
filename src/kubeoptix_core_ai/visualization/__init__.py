@@ -1,4 +1,4 @@
-"""Camada de visualização Mermaid para relatórios de assessment."""
+"""Camada de visualização PNG para relatórios de assessment."""
 
 from kubeoptix_core_ai.visualization.models import (
     VisualizationBundle,

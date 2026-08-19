@@ -11,6 +11,25 @@ visualizations, recommendations, and explicit confidence levels per item.
 
 - Python 3.11+
 - CPU only — no GPU, no external LLM, no paid APIs, no network at runtime
+- **matplotlib** — gráficos numéricos e de composição (incluído nas dependências)
+- **KubeDiagrams + Graphviz** (opcional) — diagrama de arquitetura do namespace com ícones K8s/OpenShift
+
+### Diagramas de arquitetura (opcional)
+
+O relatório usa [KubeDiagrams](https://github.com/philippemerle/KubeDiagrams) para o diagrama
+**Arquitetura do namespace** quando `kube-diagrams` e o binário Graphviz `dot` estão disponíveis.
+Caso contrário, o agente gera um diagrama alternativo com matplotlib.
+
+```bash
+# Fedora/RHEL
+sudo dnf install graphviz
+
+# Python (pode exigir graphviz-devel para compilar pygraphviz)
+pip install KubeDiagrams
+# ou: pip install -e ".[diagrams]"
+```
+
+Os gráficos de CPU, memória, QoS e findings continuam sendo gerados com **matplotlib**.
 
 ## Installation
 

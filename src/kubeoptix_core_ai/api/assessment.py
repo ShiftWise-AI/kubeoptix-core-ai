@@ -17,7 +17,9 @@ from kubeoptix_core_ai.report.markdown import (
     REPORT_FILE_ENCODING,
     MarkdownReportGenerator,
 )
+from kubeoptix_core_ai.visualization.markdown import embed_markdown_images
 from kubeoptix_core_ai.report.pipeline import AssessmentPipeline
+from kubeoptix_core_ai.visualization.pipeline import report_assets_prefix
 
 DEFAULT_ASSESSMENT_DIR = Path("/app/data/assessment")
 DEFAULT_REPORTS_DIR = Path("/app/data/reports")
@@ -135,7 +137,9 @@ class AssessmentService:
 
             filename = build_report_filename(namespace)
             report_path = self._reports_dir / filename
-            content = MarkdownReportGenerator().generate(bundle)
+            assets_dir = self._reports_dir / report_assets_prefix(namespace)
+            content = MarkdownReportGenerator().generate(bundle, assets_dir=assets_dir)
+            content = embed_markdown_images(content, markdown_dir=self._reports_dir)
             report_path.write_bytes(content.encode(REPORT_FILE_ENCODING))
 
             reports.append(

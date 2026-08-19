@@ -2,11 +2,42 @@
 
 from __future__ import annotations
 
+import base64
+import re
+from pathlib import Path
+
 from kubeoptix_core_ai.visualization.models import VisualizationSpec, VisualizationStatus
+
+_MD_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+
+
+def _markdown_image(title: str, image_relpath: str) -> str:
+    alt = title.replace("[", "").replace("]", "")
+    path = image_relpath
+    if not path.startswith(("./", "../", "http://", "https://", "data:")):
+        path = f"./{path}"
+    return f"![{alt}]({path})"
+
+
+def embed_markdown_images(content: str, *, markdown_dir: Path) -> str:
+    """Substitui referências PNG locais por data URIs embutidas no Markdown."""
+
+    def _replace(match: re.Match[str]) -> str:
+        alt, ref = match.group(1), match.group(2).strip()
+        if ref.startswith(("http://", "https://", "data:")):
+            return match.group(0)
+        normalized = ref.removeprefix("./")
+        image_path = (markdown_dir / normalized).resolve()
+        if not image_path.is_file():
+            return match.group(0)
+        encoded = base64.standard_b64encode(image_path.read_bytes()).decode("ascii")
+        return f"![{alt}](data:image/png;base64,{encoded})"
+
+    return _MD_IMAGE_RE.sub(_replace, content)
 
 
 def render_visualization_block(viz: VisualizationSpec) -> str:
-    """Formata uma visualização como seção Markdown com bloco Mermaid."""
+    """Formata uma visualização como seção Markdown com imagem PNG."""
     lines = [f"### {viz.title}", "", f"*{viz.question}*", ""]
 
     if viz.interpretation:
@@ -19,7 +50,23 @@ def render_visualization_block(viz: VisualizationSpec) -> str:
         lines.append("")
         return "\n".join(lines)
 
-    if viz.mermaid:
+    if viz.image_relpath:
+        if viz.diagram_engine == "kubediagrams":
+            lines.append(
+                "_Diagrama gerado com "
+                "[KubeDiagrams](https://github.com/philippemerle/KubeDiagrams) "
+                "a partir dos manifests YAML listados abaixo._"
+            )
+            lines.append("")
+        if viz.yaml_sources:
+            lines.append("**Manifests YAML utilizados:**")
+            for source in viz.yaml_sources[:10]:
+                lines.append(f"- `{source}`")
+            if len(viz.yaml_sources) > 10:
+                lines.append(f"- _… e mais {len(viz.yaml_sources) - 10} arquivo(s)_")
+            lines.append("")
+        lines.extend([_markdown_image(viz.title, viz.image_relpath), ""])
+    elif viz.mermaid:
         lines.extend(["```mermaid", viz.mermaid, "```", ""])
 
     return "\n".join(lines)

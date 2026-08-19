@@ -1,0 +1,18 @@
+# Configuração para Route OpenShift (route.openshift.io/v1).
+# Ícone remoto do repositório oficial KubeDiagrams (DeathStarBench).
+
+resources:
+  - kind: Route
+    apiGroup: route.openshift.io
+    versions: [v1]
+    icon: https://raw.githubusercontent.com/philippemerle/KubeDiagrams/main/examples/deathstarbench/icons/openshift-route.png
+
+clusters:
+  - labelKey: app.kubernetes.io/name
+    title: "K8s Application: {value}"
+    backgroundColor: "#ECE8F6"
+    recommended: true
+  - labelKey: app
+    title: "Application: {value}"
+    backgroundColor: "#ECE8F6"
+    recommended: false
