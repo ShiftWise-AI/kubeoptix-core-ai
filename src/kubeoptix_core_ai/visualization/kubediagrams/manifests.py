@@ -65,28 +65,47 @@ _ENV_INCLUDE_PATH_REGEX = "KUBEOPTIX_DIAGRAM_INCLUDE_PATH_REGEX"
 _ENV_EXCLUDE_PATH_REGEX = "KUBEOPTIX_DIAGRAM_EXCLUDE_PATH_REGEX"
 
 _LAYER_ORDER = {
+    "lb": 0,
     "route": 0,
     "service": 1,
+    "ingress": 1,
+    "network_policy": 1,
     "workload": 2,
+    "rbac": 2,
     "pod": 3,
     "hpa": 4,
     "vpa": 4,
     "pdb": 4,
+    "job": 4,
+    "cronjob": 4,
     "configmap": 5,
     "secret": 5,
     "pvc": 5,
+    "pv": 5,
+    "storage_class": 5,
+    "sa": 5,
     "other": 9,
 }
 
 
 def _manifest_layer(path: Path) -> int:
     raw = str(path).lower()
+    if "/loadbalancers/" in raw:
+        return _LAYER_ORDER["lb"]
     if "/routes/" in raw or "/routes.route.openshift.io/" in raw:
         return _LAYER_ORDER["route"]
     if "/services/" in raw:
         return _LAYER_ORDER["service"]
+    if "/ingresses.networking.k8s.io/" in raw or "/ingresses/" in raw:
+        return _LAYER_ORDER["ingress"]
+    if "/networkpolicies.networking.k8s.io/" in raw or "/networkpolicies/" in raw:
+        return _LAYER_ORDER["network_policy"]
     if _is_architecture_workload(path):
         return _LAYER_ORDER["workload"]
+    if "/roles.rbac.authorization.k8s.io/" in raw or "/rolebindings.rbac.authorization.k8s.io/" in raw:
+        return _LAYER_ORDER["rbac"]
+    if "/clusterroles.rbac.authorization.k8s.io/" in raw or "/clusterrolebindings.rbac.authorization.k8s.io/" in raw:
+        return _LAYER_ORDER["rbac"]
     if "/pods/" in raw:
         return _LAYER_ORDER["pod"]
     if "/horizontalpodautoscalers.autoscaling/" in raw or "/hpa/" in raw:
@@ -95,12 +114,22 @@ def _manifest_layer(path: Path) -> int:
         return _LAYER_ORDER["vpa"]
     if "/poddisruptionbudgets.policy/" in raw or "/pdb/" in raw:
         return _LAYER_ORDER["pdb"]
+    if "/jobs.batch/" in raw or "/jobs/" in raw:
+        return _LAYER_ORDER["job"]
+    if "/cronjobs.batch/" in raw or "/cronjobs/" in raw:
+        return _LAYER_ORDER["cronjob"]
     if "/configmaps/" in raw:
         return _LAYER_ORDER["configmap"]
     if "/secrets/" in raw:
         return _LAYER_ORDER["secret"]
     if "/persistentvolumeclaims/" in raw or "/pvc/" in raw:
         return _LAYER_ORDER["pvc"]
+    if "/persistentvolumes/" in raw:
+        return _LAYER_ORDER["pv"]
+    if "/storageclasses.storage.k8s.io/" in raw or "/storageclasses/" in raw:
+        return _LAYER_ORDER["storage_class"]
+    if "/serviceaccounts/" in raw:
+        return _LAYER_ORDER["sa"]
     return _LAYER_ORDER["other"]
 
 
@@ -192,6 +221,46 @@ def _platform_route_files(namespace_root: Path) -> tuple[Path, ...]:
     return tuple(sorted(routes_dir.glob("*.yaml")))
 
 
+def _all_inventory_yaml_files(namespace_root: Path) -> tuple[Path, ...]:
+    """
+    Coleta todos os YAMLs de inventário que podem enriquecer o diagrama.
+
+    Preserva apenas entradas sob `apps/` e `resources/` e remove fontes que
+    degradam legibilidade (métricas de Pod, OLM e logs).
+    """
+    if not namespace_root.is_dir():
+        return ()
+
+    selected: list[Path] = []
+    for path in namespace_root.rglob("*.yaml"):
+        raw = str(path).lower()
+        if "/apps/" not in raw and "/resources/" not in raw:
+            continue
+        if "/pods.metrics.k8s.io/" in raw:
+            continue
+        if "/clusterserviceversions.operators.coreos.com/" in raw:
+            continue
+        if "/packagemanifests.packages.operators.coreos.com/" in raw:
+            continue
+        # Recursos de alto volume/derivados que poluem o desenho arquitetural.
+        if "/replicasets/" in raw or "/replicasets.apps/" in raw:
+            continue
+        if "/endpointslices.discovery.k8s.io/" in raw:
+            continue
+        if "/endpoints/" in raw:
+            continue
+        if "/events.events.k8s.io/" in raw or "/events/" in raw:
+            continue
+        if "/leases.coordination.k8s.io/" in raw:
+            continue
+        if "/controllerrevisions.apps/" in raw:
+            continue
+        if "/pod-logs/" in raw:
+            continue
+        selected.append(path)
+    return tuple(sorted(selected))
+
+
 def select_architecture_manifests(namespace_root: Path) -> tuple[Path, ...]:
     """
     Seleciona YAMLs para o diagrama de arquitetura do namespace.
@@ -215,6 +284,7 @@ def select_architecture_manifests(namespace_root: Path) -> tuple[Path, ...]:
         workload_files,
         *supporting_groups,
         _platform_route_files(namespace_root),
+        _all_inventory_yaml_files(namespace_root),
     )
     include_common = _env_flag(_ENV_INCLUDE_COMMON, default=False)
     include_patterns = _env_regexes(_ENV_INCLUDE_PATH_REGEX)

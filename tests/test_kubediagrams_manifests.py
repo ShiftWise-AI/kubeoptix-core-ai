@@ -130,6 +130,107 @@ def test_select_architecture_manifests_includes_supporting_inventory_resources(
     assert not any("clusterserviceversions.operators.coreos.com" in path for path in paths)
 
 
+def test_select_architecture_manifests_includes_additional_inventory_kinds(
+    tmp_path: Path,
+) -> None:
+    ns = tmp_path / EXAMPLE_NAMESPACE
+    app = ns / "apps" / "backend-acesso-app"
+    (app / "deployments").mkdir(parents=True)
+    (ns / "resources" / "ingresses.networking.k8s.io").mkdir(parents=True)
+    (ns / "resources" / "networkpolicies.networking.k8s.io").mkdir(parents=True)
+    (ns / "resources" / "serviceaccounts").mkdir(parents=True)
+    (ns / "resources" / "persistentvolumes").mkdir(parents=True)
+    (ns / "resources" / "storageclasses.storage.k8s.io").mkdir(parents=True)
+    (ns / "resources" / "packagemanifests.packages.operators.coreos.com").mkdir(parents=True)
+
+    (app / "deployments" / "backend-acesso-app.yaml").write_text(
+        "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: backend-acesso-app\n",
+        encoding="utf-8",
+    )
+    (ns / "resources" / "ingresses.networking.k8s.io" / "backend-ingress.yaml").write_text(
+        "apiVersion: networking.k8s.io/v1\nkind: Ingress\nmetadata:\n  name: backend-ingress\n",
+        encoding="utf-8",
+    )
+    (ns / "resources" / "networkpolicies.networking.k8s.io" / "backend-netpol.yaml").write_text(
+        "apiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: backend-netpol\n",
+        encoding="utf-8",
+    )
+    (ns / "resources" / "serviceaccounts" / "backend-sa.yaml").write_text(
+        "apiVersion: v1\nkind: ServiceAccount\nmetadata:\n  name: backend-sa\n",
+        encoding="utf-8",
+    )
+    (ns / "resources" / "persistentvolumes" / "backend-pv.yaml").write_text(
+        "apiVersion: v1\nkind: PersistentVolume\nmetadata:\n  name: backend-pv\n",
+        encoding="utf-8",
+    )
+    (ns / "resources" / "storageclasses.storage.k8s.io" / "backend-sc.yaml").write_text(
+        "apiVersion: storage.k8s.io/v1\nkind: StorageClass\nmetadata:\n  name: backend-sc\n",
+        encoding="utf-8",
+    )
+    (ns / "resources" / "packagemanifests.packages.operators.coreos.com" / "pm.yaml").write_text(
+        "apiVersion: packages.operators.coreos.com/v1\nkind: PackageManifest\nmetadata:\n  name: pm\n",
+        encoding="utf-8",
+    )
+
+    manifests = select_architecture_manifests(ns)
+    paths = {str(path) for path in manifests}
+
+    assert any("/ingresses.networking.k8s.io/" in path for path in paths)
+    assert any("/networkpolicies.networking.k8s.io/" in path for path in paths)
+    assert any("/serviceaccounts/" in path for path in paths)
+    assert any("/persistentvolumes/" in path for path in paths)
+    assert any("/storageclasses.storage.k8s.io/" in path for path in paths)
+    assert not any("packagemanifests.packages.operators.coreos.com" in path for path in paths)
+
+
+def test_select_architecture_manifests_excludes_noisy_derived_resources(
+    tmp_path: Path,
+) -> None:
+    ns = tmp_path / EXAMPLE_NAMESPACE
+    app = ns / "apps" / "backend-acesso-app"
+    (app / "deployments").mkdir(parents=True)
+    (ns / "resources" / "replicasets.apps").mkdir(parents=True)
+    (ns / "resources" / "endpointslices.discovery.k8s.io").mkdir(parents=True)
+    (ns / "resources" / "endpoints").mkdir(parents=True)
+    (ns / "resources" / "leases.coordination.k8s.io").mkdir(parents=True)
+    (ns / "resources" / "ingresses.networking.k8s.io").mkdir(parents=True)
+
+    (app / "deployments" / "backend-acesso-app.yaml").write_text(
+        "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: backend-acesso-app\n",
+        encoding="utf-8",
+    )
+    (ns / "resources" / "replicasets.apps" / "backend-rs.yaml").write_text(
+        "apiVersion: apps/v1\nkind: ReplicaSet\nmetadata:\n  name: backend-rs\n",
+        encoding="utf-8",
+    )
+    (ns / "resources" / "endpointslices.discovery.k8s.io" / "backend-es.yaml").write_text(
+        "apiVersion: discovery.k8s.io/v1\nkind: EndpointSlice\nmetadata:\n  name: backend-es\n",
+        encoding="utf-8",
+    )
+    (ns / "resources" / "endpoints" / "backend-ep.yaml").write_text(
+        "apiVersion: v1\nkind: Endpoints\nmetadata:\n  name: backend-ep\n",
+        encoding="utf-8",
+    )
+    (ns / "resources" / "leases.coordination.k8s.io" / "backend-lease.yaml").write_text(
+        "apiVersion: coordination.k8s.io/v1\nkind: Lease\nmetadata:\n  name: backend-lease\n",
+        encoding="utf-8",
+    )
+    (ns / "resources" / "ingresses.networking.k8s.io" / "backend-ingress.yaml").write_text(
+        "apiVersion: networking.k8s.io/v1\nkind: Ingress\nmetadata:\n  name: backend-ingress\n",
+        encoding="utf-8",
+    )
+
+    manifests = select_architecture_manifests(ns)
+    paths = {str(path) for path in manifests}
+
+    assert any("/deployments/" in path for path in paths)
+    assert any("/ingresses.networking.k8s.io/" in path for path in paths)
+    assert not any("/replicasets.apps/" in path for path in paths)
+    assert not any("/endpointslices.discovery.k8s.io/" in path for path in paths)
+    assert not any("/endpoints/" in path for path in paths)
+    assert not any("/leases.coordination.k8s.io/" in path for path in paths)
+
+
 def test_select_architecture_manifests_prioritizes_layered_order(
     tmp_path: Path,
 ) -> None:

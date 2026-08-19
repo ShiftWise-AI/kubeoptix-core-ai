@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -18,6 +19,51 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT_SECONDS = 180
 KUBEDIAGRAMS_IMAGE = "docker.io/philippemerle/kubediagrams:latest"
+_ENV_ENRICH_LABELS = "KUBEOPTIX_DIAGRAM_ENRICH_LABELS"
+_OBSERVABILITY_MARKERS = (
+    "prometheus",
+    "grafana",
+    "alertmanager",
+    "jaeger",
+    "fluentd",
+    "fluent-bit",
+    "loki",
+    "kiali",
+    "otel",
+    "opentelemetry",
+)
+_MESSAGING_MARKERS = ("kafka", "rabbitmq", "activemq", "nats", "sqs", "sns")
+_DATABASE_MARKERS = (
+    "postgres",
+    "mysql",
+    "mariadb",
+    "mongodb",
+    "oracle",
+    "redis",
+    "db",
+    "rds",
+)
+_INGRESS_MARKERS = ("ingress", "route", "gateway", "istio")
+_CONTROL_PLANE_MARKERS = (
+    "kube-apiserver",
+    "apiserver",
+    "etcd",
+    "controller-manager",
+    "scheduler",
+    "openshift-console",
+)
+_EXTERNAL_SERVICE_MARKERS = (
+    "external",
+    "third-party",
+    "thirdparty",
+    "rds",
+    "cloud",
+    "saas",
+    "public",
+)
+_POD_DEPLOYMENT_PATTERN = re.compile(r"^(.+)-[a-f0-9]{8,10}-[a-z0-9]{5}$")
+_POD_REPLICASET_PATTERN = re.compile(r"^(.+)-[a-f0-9]{8,10}$")
+_POD_STATEFULSET_PATTERN = re.compile(r"^(.+)-\d+$")
 
 
 def find_container_runtime() -> str | None:
@@ -109,24 +155,33 @@ class KubeDiagramsRenderer:
             self._set_error("nenhum manifest YAML válido/parseável para renderização")
             return None
 
+        render_manifests = valid_manifests
+        temporary_dir: tempfile.TemporaryDirectory[str] | None = None
+        if self._env_flag(_ENV_ENRICH_LABELS, default=True):
+            render_manifests, temporary_dir = self._build_enriched_manifest_set(valid_manifests)
+
         output_path = self._output_path(viz_id)
-        if not self._invoke_kube_diagrams(valid_manifests, output_path):
-            if self._is_yaml_parse_error(self._last_error) and len(valid_manifests) > 1:
-                filtered = self._filter_manifests_by_kubediagrams_parse(valid_manifests)
-                if filtered and len(filtered) < len(valid_manifests):
-                    logger.warning(
-                        "KubeDiagrams: reprocessando %s com %d/%d manifests após excluir YAMLs inválidos para o parser do kube-diagrams",
-                        viz_id,
-                        len(filtered),
-                        len(valid_manifests),
-                    )
-                    self._set_error(None)
-                    if self._invoke_kube_diagrams(filtered, output_path):
-                        return self._relative_path(viz_id)
-            if self._last_error is None:
-                self._set_error("falha não detalhada ao executar KubeDiagrams")
-            return None
-        return self._relative_path(viz_id)
+        try:
+            if not self._invoke_kube_diagrams(render_manifests, output_path):
+                if self._is_yaml_parse_error(self._last_error) and len(render_manifests) > 1:
+                    filtered = self._filter_manifests_by_kubediagrams_parse(render_manifests)
+                    if filtered and len(filtered) < len(render_manifests):
+                        logger.warning(
+                            "KubeDiagrams: reprocessando %s com %d/%d manifests após excluir YAMLs inválidos para o parser do kube-diagrams",
+                            viz_id,
+                            len(filtered),
+                            len(render_manifests),
+                        )
+                        self._set_error(None)
+                        if self._invoke_kube_diagrams(filtered, output_path):
+                            return self._relative_path(viz_id)
+                if self._last_error is None:
+                    self._set_error("falha não detalhada ao executar KubeDiagrams")
+                return None
+            return self._relative_path(viz_id)
+        finally:
+            if temporary_dir is not None:
+                temporary_dir.cleanup()
 
     def _is_yaml_parse_error(self, error: str | None) -> bool:
         if not error:
@@ -138,6 +193,281 @@ class KubeDiagramsRenderer:
             "construct_document",
         )
         return any(marker in error for marker in markers)
+
+    def _env_flag(self, name: str, default: bool = False) -> bool:
+        raw = os.environ.get(name)
+        if raw is None:
+            return default
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+    def _tier_from_kind(self, kind: str) -> str:
+        k = kind.lower()
+        if k in {"service", "route", "ingress", "networkpolicy"}:
+            return "network"
+        if k in {"configmap", "secret", "persistentvolumeclaim", "persistentvolume", "storageclass"}:
+            return "platform"
+        if k in {"serviceaccount", "role", "rolebinding", "clusterrole", "clusterrolebinding"}:
+            return "security"
+        if k in {"horizontalpodautoscaler", "verticalpodautoscaler", "poddisruptionbudget"}:
+            return "operations"
+        return "workload"
+
+    def _classify_component(self, kind: str, name: str, hint: str) -> str:
+        context = f"{name} {hint}".lower()
+        if any(marker in context for marker in _OBSERVABILITY_MARKERS):
+            return "observability"
+        if any(marker in context for marker in _MESSAGING_MARKERS):
+            return "messaging"
+        if any(marker in context for marker in _DATABASE_MARKERS):
+            return "data"
+        if any(marker in context for marker in _INGRESS_MARKERS):
+            return "ingress"
+
+        k = kind.lower()
+        if k in {"deployment", "statefulset", "daemonset", "deploymentconfig"}:
+            return "workload"
+        if k in {"job", "cronjob"}:
+            return "batch"
+        if k in {"configmap", "secret"}:
+            return "configuration"
+        if k in {"persistentvolumeclaim", "persistentvolume", "storageclass"}:
+            return "storage"
+        if k in {"serviceaccount", "role", "rolebinding", "clusterrole", "clusterrolebinding"}:
+            return "security"
+        if k in {"service", "route", "ingress", "networkpolicy"}:
+            return "networking"
+        if k in {"horizontalpodautoscaler", "verticalpodautoscaler", "poddisruptionbudget"}:
+            return "operations"
+        return hint.lower() if hint else "resource"
+
+    def _classify_tier(self, kind: str, name: str, component: str) -> str:
+        context = f"{name} {component}".lower()
+        if any(marker in context for marker in _OBSERVABILITY_MARKERS):
+            return "observability"
+        if any(marker in context for marker in _MESSAGING_MARKERS):
+            return "integration"
+        if any(marker in context for marker in _DATABASE_MARKERS):
+            return "data"
+        if any(marker in context for marker in _INGRESS_MARKERS):
+            return "edge"
+        return self._tier_from_kind(kind)
+
+    def _classify_domain(self, kind: str, name: str, component: str, tier: str) -> str:
+        context = f"{kind} {name} {component} {tier}".lower()
+        if any(marker in context for marker in _CONTROL_PLANE_MARKERS):
+            return "control-plane"
+        if "observability" in context:
+            return "observability-management"
+        if "external-services" in context:
+            return "external-services"
+        if "edge" in context or "network" in context or "ingress" in context:
+            return "networking-services"
+        if "security" in context or "rbac" in context:
+            return "security-identity"
+        if "storage" in context or "data" in context:
+            return "storage-data"
+        return "workloads-runtime"
+
+    def _derive_default_labels(self, manifest: dict, source_path: Path) -> dict[str, str]:
+        metadata = manifest.get("metadata") if isinstance(manifest, dict) else {}
+        metadata = metadata if isinstance(metadata, dict) else {}
+        name = str(metadata.get("name") or source_path.stem)
+        kind = str(manifest.get("kind") or "Resource")
+        spec = manifest.get("spec") if isinstance(manifest, dict) else {}
+        spec = spec if isinstance(spec, dict) else {}
+
+        parts = source_path.parts
+        app_name = name
+        component = kind.lower()
+        if "apps" in parts:
+            try:
+                app_idx = parts.index("apps")
+                if app_idx + 1 < len(parts):
+                    app_name = parts[app_idx + 1]
+                if app_idx + 2 < len(parts):
+                    component = parts[app_idx + 2].rstrip("s")
+            except ValueError:
+                pass
+        elif "resources" in parts:
+            try:
+                res_idx = parts.index("resources")
+                if res_idx + 1 < len(parts):
+                    component = parts[res_idx + 1].split(".")[0]
+            except ValueError:
+                pass
+
+        component_label = self._classify_component(kind, name, component)
+        tier_label = self._classify_tier(kind, name, component_label)
+
+        external_name = str(spec.get("externalName") or "")
+        if external_name:
+            component_label = "external-services"
+            tier_label = "edge"
+        elif any(marker in f"{name} {component_label}".lower() for marker in _EXTERNAL_SERVICE_MARKERS):
+            if tier_label not in {"observability", "data"}:
+                component_label = "external-services"
+                tier_label = "edge"
+
+        domain_label = self._classify_domain(kind, name, component_label, tier_label)
+
+        return {
+            "app.kubernetes.io/name": app_name,
+            "app.kubernetes.io/component": component_label,
+            "app.kubernetes.io/tier": tier_label,
+            "app.kubernetes.io/part-of": self._namespace,
+            "app.kubernetes.io/instance": self._namespace,
+            "kubeoptix.io/domain": domain_label,
+        }
+
+    def _enrich_manifest_yaml_text(self, content: str, source_path: Path) -> str | None:
+        try:
+            documents = list(yaml.safe_load_all(content))
+        except yaml.YAMLError:
+            return None
+        if not documents:
+            return None
+
+        changed = False
+        normalized: list[object] = []
+        for document in documents:
+            if not isinstance(document, dict):
+                normalized.append(document)
+                continue
+            metadata = document.get("metadata")
+            if not isinstance(metadata, dict):
+                metadata = {}
+                document["metadata"] = metadata
+                changed = True
+            labels = metadata.get("labels")
+            if not isinstance(labels, dict):
+                labels = {}
+                metadata["labels"] = labels
+                changed = True
+
+            for key, value in self._derive_default_labels(document, source_path).items():
+                if key not in labels or labels.get(key) in (None, ""):
+                    labels[key] = value
+                    changed = True
+            normalized.append(document)
+
+        if not changed:
+            return None
+        return yaml.safe_dump_all(normalized, sort_keys=False, allow_unicode=False)
+
+    def _pod_group_key(self, pod_name: str) -> str:
+        """
+        Calcula a chave de agrupamento de Pods equivalentes.
+
+        Exemplos:
+        - deployment-rs pods: app-7f98c8d4c9-abcde -> app
+        - replicaset: app-7f98c8d4c9 -> app
+        - statefulset: app-0 -> app
+        """
+        if match := _POD_DEPLOYMENT_PATTERN.match(pod_name):
+            return match.group(1)
+        if match := _POD_REPLICASET_PATTERN.match(pod_name):
+            return match.group(1)
+        if match := _POD_STATEFULSET_PATTERN.match(pod_name):
+            return match.group(1)
+        return pod_name
+
+    def _collect_pod_grouping(self, manifests: tuple[Path, ...]) -> tuple[dict[Path, int], set[Path]]:
+        counts: dict[str, int] = {}
+        representative: dict[str, Path] = {}
+
+        for source in manifests:
+            raw = str(source).lower()
+            if "/pods/" not in raw:
+                continue
+            try:
+                content = source.read_text(encoding="utf-8")
+                docs = list(yaml.safe_load_all(content))
+            except (OSError, yaml.YAMLError):
+                continue
+            pod_doc = next((d for d in docs if isinstance(d, dict) and d.get("kind") == "Pod"), None)
+            if not isinstance(pod_doc, dict):
+                continue
+            metadata = pod_doc.get("metadata")
+            if not isinstance(metadata, dict):
+                continue
+            pod_name = str(metadata.get("name") or source.stem)
+            group_key = self._pod_group_key(pod_name)
+            counts[group_key] = counts.get(group_key, 0) + 1
+            representative.setdefault(group_key, source)
+
+        representative_set = set(representative.values())
+        count_by_path = {
+            path: counts[group_key]
+            for group_key, path in representative.items()
+        }
+        return count_by_path, representative_set
+
+    def _build_enriched_manifest_set(
+        self, manifests: tuple[Path, ...]
+    ) -> tuple[tuple[Path, ...], tempfile.TemporaryDirectory[str] | None]:
+        temp_dir = tempfile.TemporaryDirectory(prefix="kd_enriched_")
+        output_root = Path(temp_dir.name)
+        enriched_paths: list[Path] = []
+        changed = False
+        pod_count_by_path, pod_representatives = self._collect_pod_grouping(manifests)
+
+        for idx, source in enumerate(manifests):
+            raw_source = str(source).lower()
+            if "/pods/" in raw_source and source not in pod_representatives:
+                changed = True
+                continue
+            try:
+                content = source.read_text(encoding="utf-8")
+            except OSError:
+                enriched_paths.append(source)
+                continue
+
+            enriched = self._enrich_manifest_yaml_text(content, source)
+            if source in pod_count_by_path:
+                if enriched is None:
+                    enriched = content
+                try:
+                    docs = list(yaml.safe_load_all(enriched))
+                except yaml.YAMLError:
+                    docs = []
+                patched_docs: list[object] = []
+                patched = False
+                for document in docs:
+                    if not isinstance(document, dict) or document.get("kind") != "Pod":
+                        patched_docs.append(document)
+                        continue
+                    metadata = document.get("metadata")
+                    if not isinstance(metadata, dict):
+                        metadata = {}
+                        document["metadata"] = metadata
+                    labels = metadata.get("labels")
+                    if not isinstance(labels, dict):
+                        labels = {}
+                        metadata["labels"] = labels
+                    labels["kubeoptix.io/pod-group-size"] = str(pod_count_by_path[source])
+                    labels["kubeoptix.io/pod-group"] = self._pod_group_key(
+                        str(metadata.get("name") or source.stem)
+                    )
+                    patched_docs.append(document)
+                    patched = True
+                if patched:
+                    enriched = yaml.safe_dump_all(
+                        patched_docs, sort_keys=False, allow_unicode=False
+                    )
+
+            if enriched is None:
+                enriched_paths.append(source)
+                continue
+
+            target = output_root / f"{idx:04d}_{source.name}"
+            target.write_text(enriched, encoding="utf-8")
+            enriched_paths.append(target)
+            changed = True
+
+        if not changed:
+            temp_dir.cleanup()
+            return manifests, None
+        return tuple(enriched_paths), temp_dir
 
     def _filter_parseable_manifests(self, manifests: tuple[Path, ...]) -> tuple[Path, ...]:
         valid: list[Path] = []
