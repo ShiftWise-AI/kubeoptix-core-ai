@@ -91,3 +91,48 @@ def test_render_namespace_architecture_invokes_cli(tmp_path: Path) -> None:
     assert command[0] == "/usr/bin/kube-diagrams"
     assert "-f" in command and "png" in command
     assert "-n" in command and "example-ns" in command
+
+
+def test_render_manifests_retries_without_config_when_config_fails(tmp_path: Path) -> None:
+    assets_dir = tmp_path / "assets"
+    renderer = KubeDiagramsRenderer(
+        assets_dir,
+        namespace="example-ns",
+        path_prefix="assets",
+    )
+    manifest = tmp_path / "manifest.yaml"
+    manifest.write_text(
+        "apiVersion: v1\nkind: Service\nmetadata:\n  name: svc\n",
+        encoding="utf-8",
+    )
+    output_file = assets_dir / "comm.png"
+
+    def _local_attempt(manifests, output_path, *, use_config):
+        if use_config:
+            return False
+        output_file.write_bytes(b"png")
+        return True
+
+    with (
+        patch(
+            "kubeoptix_core_ai.visualization.kubediagrams.renderer.is_kubediagrams_available",
+            return_value=True,
+        ),
+        patch(
+            "kubeoptix_core_ai.visualization.kubediagrams.renderer.shutil.which",
+            side_effect=lambda name: f"/usr/bin/{name}" if name in {"kube-diagrams", "dot"} else None,
+        ),
+        patch.object(
+            renderer,
+            "_invoke_local_kube_diagrams",
+            side_effect=_local_attempt,
+        ) as local_mock,
+        patch(
+            "kubeoptix_core_ai.visualization.kubediagrams.renderer.find_container_runtime",
+            return_value=None,
+        ),
+    ):
+        rel = renderer.render_manifests("comm", (manifest,))
+
+    assert rel == "assets/comm.png"
+    assert local_mock.call_count == 2

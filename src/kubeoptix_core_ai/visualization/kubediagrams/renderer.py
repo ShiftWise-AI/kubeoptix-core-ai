@@ -98,18 +98,38 @@ class KubeDiagramsRenderer:
 
     def _invoke_kube_diagrams(self, manifests: tuple[Path, ...], output_path: Path) -> bool:
         if shutil.which("kube-diagrams") and shutil.which("dot"):
-            if self._invoke_local_kube_diagrams(manifests, output_path):
+            if self._invoke_local_kube_diagrams(manifests, output_path, use_config=True):
                 return True
+            if self._has_config_file():
+                logger.warning(
+                    "KubeDiagrams local falhou com configuração; tentando novamente sem -c"
+                )
+                if self._invoke_local_kube_diagrams(manifests, output_path, use_config=False):
+                    return True
             logger.debug("KubeDiagrams local falhou; tentando container")
 
         runtime = find_container_runtime()
         if runtime is not None:
-            return self._invoke_container_kube_diagrams(runtime, manifests, output_path)
+            if self._invoke_container_kube_diagrams(
+                runtime, manifests, output_path, use_config=True
+            ):
+                return True
+            if self._has_config_file():
+                logger.warning(
+                    "KubeDiagrams em container falhou com configuração; tentando novamente sem -c"
+                )
+                if self._invoke_container_kube_diagrams(
+                    runtime, manifests, output_path, use_config=False
+                ):
+                    return True
 
         return False
 
+    def _has_config_file(self) -> bool:
+        return self._config_path is not None and self._config_path.is_file()
+
     def _config_args(self, *, container: bool) -> list[str]:
-        if self._config_path is None or not self._config_path.is_file():
+        if not self._has_config_file():
             return []
         if container:
             return ["-c", "/kdconfig/kube-diagrams.yml"]
@@ -119,6 +139,8 @@ class KubeDiagramsRenderer:
         self,
         manifests: tuple[Path, ...],
         output_path: Path,
+        *,
+        use_config: bool,
     ) -> bool:
         executable = find_kube_diagrams_executable()
         if executable is None:
@@ -132,7 +154,11 @@ class KubeDiagramsRenderer:
             str(output_path),
             "-n",
             self._namespace,
-            *self._config_args(container=False),
+            *(
+                self._config_args(container=False)
+                if use_config
+                else []
+            ),
             *(str(path) for path in manifests),
         ]
         return self._run_command(command, output_path=output_path)
@@ -142,6 +168,8 @@ class KubeDiagramsRenderer:
         runtime: str,
         manifests: tuple[Path, ...],
         output_path: Path,
+        *,
+        use_config: bool,
     ) -> bool:
         resolved = [path.resolve() for path in manifests]
         work_root = Path(os.path.commonpath([str(path) for path in resolved]))
@@ -159,7 +187,7 @@ class KubeDiagramsRenderer:
             "-v",
             f"{self._assets_dir.resolve()}:/out:Z",
         ]
-        if self._config_path is not None and self._config_path.is_file():
+        if use_config and self._has_config_file():
             config_dir = self._config_path.resolve().parent
             volumes.extend(["-v", f"{config_dir}:/kdconfig:ro,Z"])
 
@@ -176,7 +204,11 @@ class KubeDiagramsRenderer:
             container_output,
             "-n",
             self._namespace,
-            *self._config_args(container=True),
+            *(
+                self._config_args(container=True)
+                if use_config
+                else []
+            ),
             *container_manifests,
         ]
         logger.debug(
