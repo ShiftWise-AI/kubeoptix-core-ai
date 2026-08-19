@@ -26,6 +26,20 @@ _ARCHITECTURE_RESOURCE_DIRS = frozenset(
     }
 )
 
+# Recursos adicionais úteis para legibilidade arquitetural.
+# Mantemos apenas artefatos declarativos que ajudam a entender acoplamentos
+# (configuração, credenciais, storage e autoscaling), evitando ruído operacional.
+_ARCHITECTURE_SUPPORTING_RESOURCES = (
+    "service_files",
+    "route_files",
+    "configmap_files",
+    "secret_files",
+    "pvc_files",
+    "hpa_files",
+    "vpa_files",
+    "pdb_files",
+)
+
 
 def _is_architecture_workload(path: Path) -> bool:
     parts = path.parts
@@ -58,8 +72,10 @@ def select_architecture_manifests(namespace_root: Path) -> tuple[Path, ...]:
     """
     Seleciona YAMLs para o diagrama de arquitetura do namespace.
 
-    Inclui controllers de workload, Services e Routes (incluindo ``__sem_app__``).
-    Exclui ReplicaSets, métricas, operadores OLM e logs.
+    Inclui controllers de workload e recursos estruturais/de comunicação:
+    Services, Routes (incluindo ``__sem_app__``), ConfigMaps, Secrets, PVCs
+    e autoscalers/disruption budgets.
+    Exclui ReplicaSets históricos, métricas, operadores OLM e logs.
     """
     if not namespace_root.is_dir():
         return ()
@@ -67,9 +83,12 @@ def select_architecture_manifests(namespace_root: Path) -> tuple[Path, ...]:
     paths = discover_namespace(namespace_root)
     workload_files = tuple(path for path in paths.workload_files if _is_architecture_workload(path))
 
+    supporting_groups = tuple(
+        getattr(paths, attr_name, ())
+        for attr_name in _ARCHITECTURE_SUPPORTING_RESOURCES
+    )
     return merge_file_lists(
         workload_files,
-        paths.service_files,
-        paths.route_files,
+        *supporting_groups,
         _platform_route_files(namespace_root),
     )

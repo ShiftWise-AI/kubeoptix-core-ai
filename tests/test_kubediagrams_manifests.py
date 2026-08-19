@@ -51,6 +51,79 @@ def test_select_architecture_manifests_includes_workload_service_route(
     assert not any("replicaset" in str(path).lower() for path in manifests)
 
 
+def test_select_architecture_manifests_includes_supporting_inventory_resources(
+    tmp_path: Path,
+) -> None:
+    ns = tmp_path / EXAMPLE_NAMESPACE
+    app = ns / "apps" / "backend-acesso-app"
+    (app / "deployments").mkdir(parents=True)
+    (app / "services").mkdir(parents=True)
+    (app / "configmaps").mkdir(parents=True)
+    (app / "secrets").mkdir(parents=True)
+    (app / "hpa").mkdir(parents=True)
+    (app / "vpa").mkdir(parents=True)
+    (app / "pdb").mkdir(parents=True)
+    (ns / "resources" / "persistentvolumeclaims").mkdir(parents=True)
+    (ns / "resources" / "pods.metrics.k8s.io").mkdir(parents=True)
+    (ns / "resources" / "clusterserviceversions.operators.coreos.com").mkdir(parents=True)
+
+    (app / "deployments" / "backend-acesso-app.yaml").write_text(
+        "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: backend-acesso-app\n",
+        encoding="utf-8",
+    )
+    (app / "services" / "backend-acesso-app.yaml").write_text(
+        "apiVersion: v1\nkind: Service\nmetadata:\n  name: backend-acesso-app\n",
+        encoding="utf-8",
+    )
+    (app / "configmaps" / "backend-acesso-app-cm.yaml").write_text(
+        "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: backend-acesso-app-cm\n",
+        encoding="utf-8",
+    )
+    (app / "secrets" / "backend-acesso-app-secret.yaml").write_text(
+        "apiVersion: v1\nkind: Secret\nmetadata:\n  name: backend-acesso-app-secret\n",
+        encoding="utf-8",
+    )
+    (ns / "resources" / "persistentvolumeclaims" / "data-backend-acesso-app.yaml").write_text(
+        "apiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  name: data-backend-acesso-app\n",
+        encoding="utf-8",
+    )
+    (app / "hpa" / "backend-acesso-app.yaml").write_text(
+        "apiVersion: autoscaling/v2\nkind: HorizontalPodAutoscaler\nmetadata:\n  name: backend-acesso-app\n",
+        encoding="utf-8",
+    )
+    (app / "vpa" / "backend-acesso-app.yaml").write_text(
+        "apiVersion: autoscaling.k8s.io/v1\nkind: VerticalPodAutoscaler\nmetadata:\n  name: backend-acesso-app\n",
+        encoding="utf-8",
+    )
+    (app / "pdb" / "backend-acesso-app.yaml").write_text(
+        "apiVersion: policy/v1\nkind: PodDisruptionBudget\nmetadata:\n  name: backend-acesso-app\n",
+        encoding="utf-8",
+    )
+    # Não deve entrar no diagrama de arquitetura.
+    (ns / "resources" / "pods.metrics.k8s.io" / "pod-metrics.yaml").write_text(
+        "apiVersion: metrics.k8s.io/v1beta1\nkind: PodMetrics\nmetadata:\n  name: pod-metrics\n",
+        encoding="utf-8",
+    )
+    (ns / "resources" / "clusterserviceversions.operators.coreos.com" / "csv.yaml").write_text(
+        "apiVersion: operators.coreos.com/v1alpha1\nkind: ClusterServiceVersion\nmetadata:\n  name: csv\n",
+        encoding="utf-8",
+    )
+
+    manifests = select_architecture_manifests(ns)
+    paths = {str(path) for path in manifests}
+
+    assert any("/deployments/" in path for path in paths)
+    assert any("/services/" in path for path in paths)
+    assert any("/configmaps/" in path for path in paths)
+    assert any("/secrets/" in path for path in paths)
+    assert any("/persistentvolumeclaims/" in path for path in paths)
+    assert any("/hpa/" in path for path in paths)
+    assert any("/vpa/" in path for path in paths)
+    assert any("/pdb/" in path for path in paths)
+    assert not any("pods.metrics.k8s.io" in path for path in paths)
+    assert not any("clusterserviceversions.operators.coreos.com" in path for path in paths)
+
+
 def test_select_architecture_manifests_empty_for_missing_dir(tmp_path: Path) -> None:
     assert select_architecture_manifests(tmp_path / "missing") == ()
 
