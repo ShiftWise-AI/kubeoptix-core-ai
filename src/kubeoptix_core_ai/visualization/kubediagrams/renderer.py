@@ -8,11 +8,14 @@ import re
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 import yaml
 
+from kubeoptix_core_ai.normalize.ownership import infer_deployment_from_replicaset_name
 from kubeoptix_core_ai.visualization.kubediagrams.config import bundled_config_path
+from kubeoptix_core_ai.visualization.kubediagrams.yamlutil import load_diagram_documents
 from kubeoptix_core_ai.visualization.png.assets import safe_asset_filename
 
 logger = logging.getLogger(__name__)
@@ -38,6 +41,51 @@ _CLUSTERING_LABEL_KEYS = (
 _POD_DEPLOYMENT_PATTERN = re.compile(r"^(.+)-[a-f0-9]{8,10}-[a-z0-9]{5}$")
 _POD_REPLICASET_PATTERN = re.compile(r"^(.+)-[a-f0-9]{8,10}$")
 _POD_STATEFULSET_PATTERN = re.compile(r"^(.+)-\d+$")
+_JOB_TIMESTAMP_PATTERN = re.compile(r"^(.+)-[0-9]{8,12}$")
+_CANONICAL_CONTROLLER_KINDS = frozenset(
+    {
+        "Deployment",
+        "StatefulSet",
+        "DaemonSet",
+        "DeploymentConfig",
+        "Job",
+        "CronJob",
+        "ReplicationController",
+        "ReplicaSet",
+    }
+)
+_CATEGORY_LABEL_WORKLOADS = "kubeoptix.io/cat-workloads"
+_CATEGORY_LABEL_PODS = "kubeoptix.io/cat-pods"
+_CATEGORY_LABEL_NETWORKING = "kubeoptix.io/cat-networking"
+_CATEGORY_LABEL_STORAGE = "kubeoptix.io/cat-storage"
+_CATEGORY_LABEL_CONFIG = "kubeoptix.io/cat-config"
+_KIND_CATEGORY_LABELS: dict[str, dict[str, str]] = {
+    "Deployment": {_CATEGORY_LABEL_WORKLOADS: "Workloads"},
+    "StatefulSet": {_CATEGORY_LABEL_WORKLOADS: "Workloads"},
+    "DaemonSet": {_CATEGORY_LABEL_WORKLOADS: "Workloads"},
+    "DeploymentConfig": {_CATEGORY_LABEL_WORKLOADS: "Workloads"},
+    "ReplicaSet": {_CATEGORY_LABEL_WORKLOADS: "Workloads"},
+    "ReplicationController": {_CATEGORY_LABEL_WORKLOADS: "Workloads"},
+    "Job": {_CATEGORY_LABEL_WORKLOADS: "Workloads"},
+    "CronJob": {_CATEGORY_LABEL_WORKLOADS: "Workloads"},
+    "HorizontalPodAutoscaler": {_CATEGORY_LABEL_WORKLOADS: "Workloads"},
+    "VerticalPodAutoscaler": {_CATEGORY_LABEL_WORKLOADS: "Workloads"},
+    "PodDisruptionBudget": {_CATEGORY_LABEL_WORKLOADS: "Workloads"},
+    "Pod": {
+        _CATEGORY_LABEL_WORKLOADS: "Workloads",
+        _CATEGORY_LABEL_PODS: "Pods",
+    },
+    "Service": {_CATEGORY_LABEL_NETWORKING: "Networking"},
+    "Route": {_CATEGORY_LABEL_NETWORKING: "Networking"},
+    "Ingress": {_CATEGORY_LABEL_NETWORKING: "Networking"},
+    "NetworkPolicy": {_CATEGORY_LABEL_NETWORKING: "Networking"},
+    "PersistentVolume": {_CATEGORY_LABEL_STORAGE: "Storage"},
+    "PersistentVolumeClaim": {_CATEGORY_LABEL_STORAGE: "Storage"},
+    "StorageClass": {_CATEGORY_LABEL_STORAGE: "Storage"},
+    "ConfigMap": {_CATEGORY_LABEL_CONFIG: "Configuration"},
+    "Secret": {_CATEGORY_LABEL_CONFIG: "Configuration"},
+    "ServiceAccount": {_CATEGORY_LABEL_CONFIG: "Configuration"},
+}
 
 
 def find_container_runtime() -> str | None:
@@ -57,6 +105,172 @@ def is_kubediagrams_available() -> bool:
 
 def find_kube_diagrams_executable() -> str | None:
     return shutil.which("kube-diagrams")
+
+
+_DOT_NODE_ID_RE = re.compile(
+    r'(?m)^\s+("[0-9a-fA-F]{32}"|[A-Fa-f][0-9a-fA-F]{31})\s*\['
+)
+_DOT_EDGE_RE = re.compile(
+    r'(?m)^(\t(?:\"[0-9a-fA-F]{32}\"|[A-Fa-f][0-9a-fA-F]{31}) -> '
+    r'(?:\"[0-9a-fA-F]{32}\"|[A-Fa-f][0-9a-fA-F]{31}) \[)([^\]]*)(\])'
+)
+_LEFT_COLUMN_CLUSTERS = ("Workloads", "Configuration", "Storage")
+_CATEGORY_CLUSTER_NAMES = (*_LEFT_COLUMN_CLUSTERS, "Networking")
+
+
+def _extract_dot_subgraph(source: str, marker: str) -> tuple[str, int, int] | None:
+    start = source.find(marker)
+    if start < 0:
+        return None
+    brace = source.find("{", start)
+    if brace < 0:
+        return None
+    depth = 0
+    for index in range(brace, len(source)):
+        char = source[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start : index + 1], start, index + 1
+    return None
+
+
+def _dot_node_ids(cluster_src: str) -> list[str]:
+    return _DOT_NODE_ID_RE.findall(cluster_src)
+
+
+def _namespace_rankdir_tb(dot_source: str) -> str:
+    return re.sub(
+        r'(subgraph "cluster_Namespace:[^"]*" \{\s*graph \[[^\]]*?)rankdir=LR',
+        r"\1rankdir=TB",
+        dot_source,
+        count=1,
+        flags=re.DOTALL,
+    )
+
+
+def _ensure_root_layout_attrs(dot_source: str) -> str:
+    match = re.search(r"(?m)^(\tgraph \[)([^\]]*)(\])", dot_source)
+    if match is None:
+        return dot_source
+    body = match.group(2)
+    additions: list[str] = []
+    if "compound=" not in body:
+        additions.append("compound=true")
+    if "newrank=" not in body:
+        additions.append("newrank=true")
+    if not additions:
+        return dot_source
+    return (
+        dot_source[: match.start(2)]
+        + body
+        + " "
+        + " ".join(additions)
+        + dot_source[match.end(2) :]
+    )
+
+
+def _relax_inter_cluster_edges(dot_source: str, membership: dict[str, str]) -> str:
+    def _replace(match: re.Match[str]) -> str:
+        edge_ids = re.findall(
+            r'"[0-9a-fA-F]{32}"|[A-Fa-f][0-9a-fA-F]{31}', match.group(1)
+        )
+        if len(edge_ids) < 2:
+            return match.group(0)
+        source_cluster = membership.get(edge_ids[0])
+        target_cluster = membership.get(edge_ids[1])
+        if not source_cluster or not target_cluster or source_cluster == target_cluster:
+            return match.group(0)
+        attrs = match.group(2)
+        if "constraint=" not in attrs:
+            attrs += " constraint=false"
+        return match.group(1) + attrs + match.group(3)
+
+    return _DOT_EDGE_RE.sub(_replace, dot_source)
+
+
+def _wrap_left_column_clusters(dot_source: str) -> str:
+    found: dict[str, tuple[str, int, int]] = {}
+    for name in _CATEGORY_CLUSTER_NAMES:
+        extracted = _extract_dot_subgraph(dot_source, f"subgraph cluster_{name} {{")
+        if extracted is not None:
+            found[name] = extracted
+    if len(found) < 2:
+        return dot_source
+    first = min(item[1] for item in found.values())
+    last = max(item[2] for item in found.values())
+    left_parts = [
+        found[name][0].replace(" rank=min", "").replace("rank=min ", "")
+        for name in _LEFT_COLUMN_CLUSTERS
+        if name in found
+    ]
+    networking = found["Networking"][0] if "Networking" in found else ""
+    if not left_parts:
+        return dot_source
+    wrapped = (
+        "subgraph cluster_kubeoptix_left {\n"
+        '\t\tgraph [label="" style=invis]\n'
+        + "\n".join(left_parts)
+        + "\n\t\t}\n"
+        + networking
+        + ("\n" if networking else "")
+    )
+    return dot_source[:first] + wrapped + dot_source[last:]
+
+
+def _layout_rank_constraints(dot_source: str) -> str:
+    workloads = _extract_dot_subgraph(dot_source, "subgraph cluster_Workloads {")
+    if workloads is None:
+        return dot_source
+    pods = _extract_dot_subgraph(workloads[0], "subgraph cluster_Pods {")
+    pod_nodes = _dot_node_ids(pods[0]) if pods is not None else []
+    workload_nodes = _dot_node_ids(workloads[0])
+    controller_nodes = [node for node in workload_nodes if node not in set(pod_nodes)]
+    config = _extract_dot_subgraph(dot_source, "subgraph cluster_Configuration {")
+    storage = _extract_dot_subgraph(dot_source, "subgraph cluster_Storage {")
+    networking = _extract_dot_subgraph(dot_source, "subgraph cluster_Networking {")
+    config_nodes = _dot_node_ids(config[0]) if config is not None else []
+    storage_nodes = _dot_node_ids(storage[0]) if storage is not None else []
+    network_nodes = _dot_node_ids(networking[0]) if networking is not None else []
+
+    lines: list[str] = []
+    if controller_nodes and network_nodes:
+        lines.append(f"\t{{ rank=same; {controller_nodes[0]}; {network_nodes[0]}; }}")
+        lines.append(
+            f"\t{controller_nodes[0]} -> {network_nodes[0]} "
+            "[style=invis weight=1 minlen=4];"
+        )
+    if len(pod_nodes) > 1:
+        lines.append(f"\t{{ rank=same; {'; '.join(pod_nodes)}; }}")
+    if config_nodes:
+        lines.append(f"\t{{ rank=same; {'; '.join(config_nodes)}; }}")
+        anchor = pod_nodes[0] if pod_nodes else controller_nodes[0]
+        lines.append(
+            f"\t{anchor} -> {config_nodes[0]} [style=invis weight=200 minlen=1];"
+        )
+    if storage_nodes:
+        lines.append(f"\t{{ rank=same; {'; '.join(storage_nodes)}; }}")
+        if config_nodes:
+            src_anchor = config_nodes[0]
+        elif pod_nodes:
+            src_anchor = pod_nodes[0]
+        elif controller_nodes:
+            src_anchor = controller_nodes[0]
+        else:
+            src_anchor = ""
+        if src_anchor:
+            lines.append(
+                f"\t{src_anchor} -> {storage_nodes[0]} "
+                "[style=invis weight=200 minlen=1];"
+            )
+    if not lines:
+        return dot_source
+    closing = dot_source.rfind("}")
+    if closing < 0:
+        return dot_source
+    return dot_source[:closing] + "\n" + "\n".join(lines) + "\n" + dot_source[closing:]
 
 
 class KubeDiagramsRenderer:
@@ -129,10 +343,10 @@ class KubeDiagramsRenderer:
             self._set_error("nenhum manifest YAML válido/parseável para renderização")
             return None
 
-        render_manifests = valid_manifests
-        temporary_dir: tempfile.TemporaryDirectory[str] | None = None
-        if self._env_flag(_ENV_ENRICH_LABELS, default=True):
-            render_manifests, temporary_dir = self._build_enriched_manifest_set(valid_manifests)
+        render_manifests, temporary_dir = self._build_enriched_manifest_set(
+            valid_manifests,
+            enrich=self._env_flag(_ENV_ENRICH_LABELS, default=True),
+        )
 
         output_path = self._output_path(viz_id)
         try:
@@ -202,6 +416,7 @@ class KubeDiagramsRenderer:
                 "namespace": _EXTERNAL_NAMESPACE,
                 "labels": {
                     "kubeoptix.io/external-peer": service_name,
+                    _CATEGORY_LABEL_NETWORKING: "Networking",
                 },
             },
             "spec": {
@@ -214,10 +429,7 @@ class KubeDiagramsRenderer:
         peers: list[dict] = []
         seen: set[str] = set()
         for source in manifests:
-            try:
-                docs = list(yaml.safe_load_all(source.read_text(encoding="utf-8")))
-            except (OSError, yaml.YAMLError):
-                continue
+            docs = load_diagram_documents(source)
             for document in docs:
                 if not isinstance(document, dict) or not self._is_external_service(document):
                     continue
@@ -250,29 +462,155 @@ class KubeDiagramsRenderer:
         self._strip_clustering_labels(labels)
         if set(labels) != before:
             changed = True
+        if self._apply_category_labels(document):
+            changed = True
         return changed
 
-    def _enrich_manifest_yaml_text(self, content: str, source_path: Path) -> str | None:
-        try:
-            documents = list(yaml.safe_load_all(content))
-        except yaml.YAMLError:
-            return None
-        if not documents:
-            return None
-
+    def _apply_category_labels(self, document: dict) -> bool:
+        kind = str(document.get("kind") or "")
+        category_labels = _KIND_CATEGORY_LABELS.get(kind)
+        if not category_labels:
+            return False
+        metadata = document.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+            document["metadata"] = metadata
+        labels = metadata.get("labels")
+        if not isinstance(labels, dict):
+            labels = {}
+            metadata["labels"] = labels
         changed = False
-        normalized: list[object] = []
+        for key, value in category_labels.items():
+            if labels.get(key) != value:
+                labels[key] = value
+                changed = True
+        return changed
+
+    def _replica_label(self, name: str, count: int) -> str:
+        unit = "replica" if count == 1 else "replicas"
+        return f"{name} ({count} {unit})"
+
+    def _service_port_suffix(self, document: dict) -> str:
+        spec = document.get("spec")
+        if not isinstance(spec, dict):
+            return ""
+        ports = spec.get("ports")
+        if not isinstance(ports, list):
+            return ""
+        numbers: list[str] = []
+        for item in ports:
+            if not isinstance(item, dict) or item.get("port") is None:
+                continue
+            numbers.append(str(item["port"]))
+        if not numbers:
+            return ""
+        return ":" + ",".join(numbers)
+
+    def _apply_service_port_display(self, document: dict) -> tuple[str, str] | None:
+        if document.get("kind") != "Service":
+            return None
+        metadata = document.get("metadata")
+        if not isinstance(metadata, dict):
+            return None
+        original = str(metadata.get("name") or "").strip()
+        if not original:
+            return None
+        suffix = self._service_port_suffix(document)
+        if not suffix or original.endswith(suffix):
+            return None
+        annotations = metadata.get("annotations")
+        if not isinstance(annotations, dict):
+            annotations = {}
+            metadata["annotations"] = annotations
+        annotations.setdefault("kubeoptix.io/original-name", original)
+        metadata["name"] = f"{original}{suffix}"
+        return original, str(metadata["name"])
+
+    def _patch_service_name_refs(
+        self,
+        document: dict,
+        renames: dict[tuple[str, str], str],
+    ) -> None:
+        if not renames:
+            return
+        metadata = document.get("metadata") if isinstance(document.get("metadata"), dict) else {}
+        namespace = str(metadata.get("namespace") or self._namespace)
+        kind = str(document.get("kind") or "")
+        spec = document.get("spec")
+        if not isinstance(spec, dict):
+            return
+
+        def _rename(name: object) -> str | None:
+            if not isinstance(name, str) or not name:
+                return None
+            return renames.get((namespace, name)) or renames.get((self._namespace, name))
+
+        if kind == "Route":
+            target = spec.get("to")
+            if isinstance(target, dict):
+                replacement = _rename(target.get("name"))
+                if replacement:
+                    target["name"] = replacement
+            backends = spec.get("alternateBackends")
+            if isinstance(backends, list):
+                for backend in backends:
+                    if not isinstance(backend, dict):
+                        continue
+                    replacement = _rename(backend.get("name"))
+                    if replacement:
+                        backend["name"] = replacement
+            return
+        if kind == "Ingress":
+            default_backend = spec.get("defaultBackend")
+            if isinstance(default_backend, dict):
+                service = default_backend.get("service")
+                if isinstance(service, dict):
+                    replacement = _rename(service.get("name"))
+                    if replacement:
+                        service["name"] = replacement
+            rules = spec.get("rules")
+            if isinstance(rules, list):
+                for rule in rules:
+                    if not isinstance(rule, dict):
+                        continue
+                    http = rule.get("http")
+                    if not isinstance(http, dict):
+                        continue
+                    paths = http.get("paths")
+                    if not isinstance(paths, list):
+                        continue
+                    for path_item in paths:
+                        if not isinstance(path_item, dict):
+                            continue
+                        backend = path_item.get("backend")
+                        if not isinstance(backend, dict):
+                            continue
+                        service = backend.get("service")
+                        if isinstance(service, dict):
+                            replacement = _rename(service.get("name"))
+                            if replacement:
+                                service["name"] = replacement
+            return
+        if kind == "StatefulSet":
+            replacement = _rename(spec.get("serviceName"))
+            if replacement:
+                spec["serviceName"] = replacement
+
+    def _enrich_manifest_documents(self, documents: list[dict]) -> bool:
+        changed = False
         for document in documents:
             if not isinstance(document, dict):
-                normalized.append(document)
                 continue
             if self._normalize_manifest_document(document):
                 changed = True
-            normalized.append(document)
+        return changed
 
-        if not changed:
-            return None
-        return yaml.safe_dump_all(normalized, sort_keys=False, allow_unicode=False)
+    def _source_is_native_parseable(self, path: Path) -> bool:
+        try:
+            documents = list(yaml.safe_load_all(path.read_text(encoding="utf-8")))
+        except (OSError, yaml.YAMLError):
+            return False
+        return bool(documents) and not all(item is None for item in documents)
 
     def _pod_group_key(self, pod_name: str) -> str:
         """
@@ -291,99 +629,231 @@ class KubeDiagramsRenderer:
             return match.group(1)
         return pod_name
 
-    def _collect_pod_grouping(self, manifests: tuple[Path, ...]) -> tuple[dict[Path, int], set[Path]]:
+    def _controller_group_from_owner_refs(self, document: dict) -> str | None:
+        metadata = document.get("metadata")
+        if not isinstance(metadata, dict):
+            return None
+        owners = metadata.get("ownerReferences")
+        if not isinstance(owners, list):
+            return None
+        for owner in owners:
+            if not isinstance(owner, dict):
+                continue
+            if owner.get("controller") is False:
+                continue
+            kind = str(owner.get("kind") or "")
+            name = str(owner.get("name") or "")
+            if not name or kind not in _CANONICAL_CONTROLLER_KINDS:
+                continue
+            if kind == "ReplicaSet":
+                return infer_deployment_from_replicaset_name(name) or name
+            return name
+        return None
+
+    def _job_group_key(self, job_name: str) -> str:
+        if match := _JOB_TIMESTAMP_PATTERN.match(job_name):
+            return match.group(1)
+        return job_name
+
+    def _collect_kind_grouping(
+        self,
+        manifests: tuple[Path, ...],
+        *,
+        kind: str,
+        path_marker: str,
+        fallback_key: Callable[[str], str],
+    ) -> tuple[dict[Path, tuple[str, int]], set[Path], set[Path]]:
         counts: dict[str, int] = {}
         representative: dict[str, Path] = {}
+        seen: set[Path] = set()
 
         for source in manifests:
-            raw = str(source).lower()
-            if "/pods/" not in raw:
+            if path_marker not in str(source).lower():
                 continue
-            try:
-                content = source.read_text(encoding="utf-8")
-                docs = list(yaml.safe_load_all(content))
-            except (OSError, yaml.YAMLError):
+            docs = load_diagram_documents(source)
+            document = next(
+                (item for item in docs if isinstance(item, dict) and item.get("kind") == kind),
+                None,
+            )
+            if not isinstance(document, dict):
                 continue
-            pod_doc = next((d for d in docs if isinstance(d, dict) and d.get("kind") == "Pod"), None)
-            if not isinstance(pod_doc, dict):
-                continue
-            metadata = pod_doc.get("metadata")
+            metadata = document.get("metadata")
             if not isinstance(metadata, dict):
                 continue
-            pod_name = str(metadata.get("name") or source.stem)
-            group_key = self._pod_group_key(pod_name)
+            resource_name = str(metadata.get("name") or source.stem)
+            group_key = self._controller_group_from_owner_refs(document) or fallback_key(
+                resource_name
+            )
             counts[group_key] = counts.get(group_key, 0) + 1
             representative.setdefault(group_key, source)
+            seen.add(source)
 
         representative_set = set(representative.values())
-        count_by_path = {
-            path: counts[group_key]
+        info_by_path = {
+            path: (group_key, counts[group_key])
             for group_key, path in representative.items()
         }
-        return count_by_path, representative_set
+        return info_by_path, representative_set, seen
+
+    def _collect_pod_grouping(
+        self, manifests: tuple[Path, ...]
+    ) -> tuple[dict[Path, tuple[str, int]], set[Path], set[Path]]:
+        return self._collect_kind_grouping(
+            manifests,
+            kind="Pod",
+            path_marker="/pods/",
+            fallback_key=self._pod_group_key,
+        )
+
+    def _collect_job_grouping(
+        self, manifests: tuple[Path, ...]
+    ) -> tuple[dict[Path, tuple[str, int]], set[Path], set[Path]]:
+        return self._collect_kind_grouping(
+            manifests,
+            kind="Job",
+            path_marker="/jobs",
+            fallback_key=self._job_group_key,
+        )
+
+    def _apply_group_display(
+        self,
+        document: dict,
+        *,
+        expected_kind: str,
+        group_key: str,
+        count: int,
+        source_stem: str,
+    ) -> None:
+        if document.get("kind") != expected_kind:
+            return
+        metadata = document.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+            document["metadata"] = metadata
+        labels = metadata.get("labels")
+        if not isinstance(labels, dict):
+            labels = {}
+            metadata["labels"] = labels
+        annotations = metadata.get("annotations")
+        if not isinstance(annotations, dict):
+            annotations = {}
+            metadata["annotations"] = annotations
+        original_name = str(metadata.get("name") or source_stem)
+        annotations.setdefault("kubeoptix.io/original-name", original_name)
+        size_key = "kubeoptix.io/pod-group-size" if expected_kind == "Pod" else "kubeoptix.io/job-group-size"
+        group_label_key = "kubeoptix.io/pod-group" if expected_kind == "Pod" else "kubeoptix.io/job-group"
+        labels[size_key] = str(count)
+        labels[group_label_key] = group_key
+        metadata["name"] = self._replica_label(group_key, count)
+
+    def _apply_group_display_to_documents(
+        self,
+        documents: list[dict],
+        source: Path,
+        grouping: dict[Path, tuple[str, int]],
+        expected_kind: str,
+    ) -> bool:
+        if source not in grouping:
+            return False
+        group_key, count = grouping[source]
+        patched = False
+        for document in documents:
+            if not isinstance(document, dict) or document.get("kind") != expected_kind:
+                continue
+            self._apply_group_display(
+                document,
+                expected_kind=expected_kind,
+                group_key=group_key,
+                count=count,
+                source_stem=source.stem,
+            )
+            patched = True
+        return patched
+
+    def _write_documents(self, target: Path, documents: list[dict]) -> None:
+        target.write_text(
+            yaml.safe_dump_all(documents, sort_keys=False, allow_unicode=False),
+            encoding="utf-8",
+        )
 
     def _build_enriched_manifest_set(
-        self, manifests: tuple[Path, ...]
+        self,
+        manifests: tuple[Path, ...],
+        *,
+        enrich: bool = True,
     ) -> tuple[tuple[Path, ...], tempfile.TemporaryDirectory[str] | None]:
+        loaded: list[tuple[Path, list[dict]]] = []
+        for source in manifests:
+            documents = load_diagram_documents(source)
+            if documents:
+                loaded.append((source, documents))
+        if not loaded:
+            return (), None
+
+        if not enrich:
+            native_ok = all(self._source_is_native_parseable(source) for source, _ in loaded)
+            if native_ok:
+                return tuple(source for source, _ in loaded), None
+            temp_dir = tempfile.TemporaryDirectory(prefix="kd_sanitized_")
+            output_root = Path(temp_dir.name)
+            paths: list[Path] = []
+            for idx, (source, documents) in enumerate(loaded):
+                if self._source_is_native_parseable(source):
+                    paths.append(source)
+                    continue
+                target = output_root / f"{idx:04d}_{source.name}"
+                self._write_documents(target, documents)
+                paths.append(target)
+            return tuple(paths), temp_dir
+
         temp_dir = tempfile.TemporaryDirectory(prefix="kd_enriched_")
         output_root = Path(temp_dir.name)
         enriched_paths: list[Path] = []
-        changed = False
-        pod_count_by_path, pod_representatives = self._collect_pod_grouping(manifests)
-        external_peers = self._collect_external_peer_manifests(manifests)
+        source_paths = tuple(source for source, _ in loaded)
+        pod_info_by_path, pod_representatives, seen_pods = self._collect_pod_grouping(
+            source_paths
+        )
+        job_info_by_path, job_representatives, seen_jobs = self._collect_job_grouping(
+            source_paths
+        )
+        service_renames: dict[tuple[str, str], str] = {}
+        prepared: list[tuple[Path, list[dict]]] = []
 
-        for idx, source in enumerate(manifests):
-            raw_source = str(source).lower()
-            if "/pods/" in raw_source and source not in pod_representatives:
-                changed = True
+        for source, documents in loaded:
+            if source in seen_pods and source not in pod_representatives:
                 continue
-            try:
-                content = source.read_text(encoding="utf-8")
-            except OSError:
-                enriched_paths.append(source)
+            if source in seen_jobs and source not in job_representatives:
                 continue
+            self._enrich_manifest_documents(documents)
+            self._apply_group_display_to_documents(
+                documents, source, pod_info_by_path, "Pod"
+            )
+            self._apply_group_display_to_documents(
+                documents, source, job_info_by_path, "Job"
+            )
+            for document in documents:
+                if not isinstance(document, dict):
+                    continue
+                renamed = self._apply_service_port_display(document)
+                if renamed is None:
+                    continue
+                original, display = renamed
+                metadata = document.get("metadata") if isinstance(document.get("metadata"), dict) else {}
+                namespace = str(metadata.get("namespace") or self._namespace)
+                service_renames[(namespace, original)] = display
+            prepared.append((source, documents))
 
-            enriched = self._enrich_manifest_yaml_text(content, source)
-            if source in pod_count_by_path:
-                if enriched is None:
-                    enriched = content
-                try:
-                    docs = list(yaml.safe_load_all(enriched))
-                except yaml.YAMLError:
-                    docs = []
-                patched_docs: list[object] = []
-                patched = False
-                for document in docs:
-                    if not isinstance(document, dict) or document.get("kind") != "Pod":
-                        patched_docs.append(document)
-                        continue
-                    metadata = document.get("metadata")
-                    if not isinstance(metadata, dict):
-                        metadata = {}
-                        document["metadata"] = metadata
-                    labels = metadata.get("labels")
-                    if not isinstance(labels, dict):
-                        labels = {}
-                        metadata["labels"] = labels
-                    labels["kubeoptix.io/pod-group-size"] = str(pod_count_by_path[source])
-                    labels["kubeoptix.io/pod-group"] = self._pod_group_key(
-                        str(metadata.get("name") or source.stem)
-                    )
-                    patched_docs.append(document)
-                    patched = True
-                if patched:
-                    enriched = yaml.safe_dump_all(
-                        patched_docs, sort_keys=False, allow_unicode=False
-                    )
+        external_peers = self._collect_external_peer_manifests(
+            tuple(source for source, _ in prepared)
+        )
 
-            if enriched is None:
-                enriched_paths.append(source)
-                continue
-
-            target = output_root / f"{idx:04d}_{source.name}"
-            target.write_text(enriched, encoding="utf-8")
+        for source, documents in prepared:
+            for document in documents:
+                if isinstance(document, dict):
+                    self._patch_service_name_refs(document, service_renames)
+            target = output_root / f"{len(enriched_paths):04d}_{source.name}"
+            self._write_documents(target, documents)
             enriched_paths.append(target)
-            changed = True
 
         for peer_idx, peer in enumerate(external_peers):
             target = output_root / f"ext_{peer_idx:04d}_{peer['metadata']['name']}.yaml"
@@ -392,9 +862,8 @@ class KubeDiagramsRenderer:
                 encoding="utf-8",
             )
             enriched_paths.append(target)
-            changed = True
 
-        if not changed:
+        if not enriched_paths:
             temp_dir.cleanup()
             return manifests, None
         return tuple(enriched_paths), temp_dir
@@ -402,18 +871,9 @@ class KubeDiagramsRenderer:
     def _filter_parseable_manifests(self, manifests: tuple[Path, ...]) -> tuple[Path, ...]:
         valid: list[Path] = []
         for path in manifests:
-            try:
-                content = path.read_text(encoding="utf-8")
-            except OSError as exc:
-                logger.warning("Manifest ignorado (erro de leitura): %s (%s)", path, exc)
-                continue
-            try:
-                docs = list(yaml.safe_load_all(content))
-            except yaml.YAMLError as exc:
-                logger.warning("Manifest ignorado (YAML inválido): %s (%s)", path, exc)
-                continue
-            if not docs or all(doc is None for doc in docs):
-                logger.warning("Manifest ignorado (vazio): %s", path)
+            documents = load_diagram_documents(path)
+            if not documents:
+                logger.warning("Manifest ignorado (YAML inválido ou vazio): %s", path)
                 continue
             valid.append(path)
         if len(valid) < len(manifests):
@@ -486,7 +946,7 @@ class KubeDiagramsRenderer:
         return tuple(valid)
 
     def _invoke_kube_diagrams(self, manifests: tuple[Path, ...], output_path: Path) -> bool:
-        if shutil.which("kube-diagrams") and shutil.which("dot"):
+        if find_kube_diagrams_executable() is not None:
             if self._invoke_local_kube_diagrams(manifests, output_path, use_config=True):
                 return True
             if self._has_config_file():
@@ -524,6 +984,183 @@ class KubeDiagramsRenderer:
             return ["-c", "/kdconfig/kube-diagrams.yml"]
         return ["-c", str(self._config_path)]
 
+    def _tune_dot_layout(self, dot_source: str) -> str:
+        """Empilha Workloads → Configuration → Storage à esquerda e Networking à direita."""
+        tuned = _namespace_rankdir_tb(dot_source)
+        membership: dict[str, str] = {}
+        for name in _CATEGORY_CLUSTER_NAMES:
+            extracted = _extract_dot_subgraph(tuned, f"subgraph cluster_{name} {{")
+            if extracted is None:
+                continue
+            for node_id in _dot_node_ids(extracted[0]):
+                membership[node_id] = name
+        tuned = _wrap_left_column_clusters(tuned)
+        tuned = tuned.replace(" rank=min", "").replace("rank=min ", "")
+        if membership:
+            tuned = _relax_inter_cluster_edges(tuned, membership)
+        tuned = _ensure_root_layout_attrs(tuned)
+        return _layout_rank_constraints(tuned)
+
+    def _read_generated_dot(self, requested: Path) -> str | None:
+        stem = requested.with_suffix("")
+        candidates = (requested, stem, stem.with_suffix(".dot"))
+        seen: set[Path] = set()
+        for path in candidates:
+            if path in seen:
+                continue
+            seen.add(path)
+            if not path.is_file():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            if "digraph" in text:
+                return text
+        return None
+
+    def _dot_icon_volume_args(self, dot_source: str) -> list[str]:
+        images = [
+            Path(path)
+            for path in re.findall(r'image="([^"]+)"', dot_source)
+            if path.startswith("/")
+        ]
+        existing = [path for path in images if path.is_file()]
+        if not existing:
+            return []
+        root = Path(os.path.commonpath([str(path) for path in existing]))
+        if root.is_file():
+            root = root.parent
+        return ["-v", f"{root}:{root}:ro,Z"]
+
+    def _render_dot_to_png_with_runtime(
+        self, runtime: str, dot_source: str, output_path: Path
+    ) -> bool:
+        dot_name = f".kd_layout_{output_path.stem}.dot"
+        host_dot = self._assets_dir / dot_name
+        try:
+            host_dot.write_text(dot_source, encoding="utf-8")
+            command = [
+                runtime,
+                "run",
+                "--rm",
+                "-v",
+                f"{self._assets_dir.resolve()}:/out:Z",
+                *self._dot_icon_volume_args(dot_source),
+                KUBEDIAGRAMS_IMAGE,
+                "dot",
+                "-Tpng",
+                "-o",
+                f"/out/{output_path.name}",
+                f"/out/{dot_name}",
+            ]
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=_DEFAULT_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            logger.warning("Falha ao renderizar DOT via container: %s", exc)
+            return False
+        finally:
+            try:
+                host_dot.unlink(missing_ok=True)
+            except OSError:
+                pass
+        if not (output_path.is_file() and output_path.stat().st_size > 0):
+            logger.warning(
+                "dot em container não produziu PNG (exit %s): %s",
+                getattr(result, "returncode", "?"),
+                (getattr(result, "stderr", None) or "")[:1000],
+            )
+            return False
+        return True
+
+    def _render_dot_to_png(self, dot_source: str, output_path: Path) -> bool:
+        if shutil.which("dot") is not None:
+            with tempfile.NamedTemporaryFile(
+                prefix="kd_layout_",
+                suffix=".dot",
+                dir=self._assets_dir,
+                delete=False,
+            ) as tmp:
+                dot_path = Path(tmp.name)
+            try:
+                dot_path.write_text(dot_source, encoding="utf-8")
+                result = subprocess.run(
+                    [shutil.which("dot"), "-Tpng", "-o", str(output_path), str(dot_path)],
+                    capture_output=True,
+                    text=True,
+                    timeout=_DEFAULT_TIMEOUT_SECONDS,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                logger.warning("Falha ao renderizar DOT: %s", exc)
+                result = None
+            finally:
+                try:
+                    dot_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            if result is not None and result.returncode == 0:
+                if output_path.is_file() and output_path.stat().st_size > 0:
+                    return True
+        runtime = find_container_runtime()
+        if runtime is not None:
+            return self._render_dot_to_png_with_runtime(runtime, dot_source, output_path)
+        return False
+
+    def _invoke_local_kube_diagrams_dot(
+        self,
+        manifests: tuple[Path, ...],
+        output_path: Path,
+        *,
+        use_config: bool,
+    ) -> bool:
+        executable = find_kube_diagrams_executable()
+        if executable is None:
+            return False
+        with tempfile.NamedTemporaryFile(
+            prefix="kd_dot_",
+            suffix=".dot",
+            dir=self._assets_dir,
+            delete=False,
+        ) as tmp:
+            dot_output = Path(tmp.name)
+        extras = [dot_output, dot_output.with_suffix("")]
+        try:
+            command: list[str] = [
+                executable,
+                "-f",
+                "dot",
+                "-o",
+                str(dot_output),
+                *(self._config_args(container=False) if use_config else []),
+                *(str(path) for path in manifests),
+            ]
+            subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=_DEFAULT_TIMEOUT_SECONDS,
+                check=False,
+            )
+            source = self._read_generated_dot(dot_output)
+            if not source:
+                return False
+            tuned = self._tune_dot_layout(source)
+            return self._render_dot_to_png(tuned, output_path)
+        except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError):
+            return False
+        finally:
+            for path in extras:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
     def _invoke_local_kube_diagrams(
         self,
         manifests: tuple[Path, ...],
@@ -533,6 +1170,13 @@ class KubeDiagramsRenderer:
     ) -> bool:
         executable = find_kube_diagrams_executable()
         if executable is None:
+            return False
+
+        if self._invoke_local_kube_diagrams_dot(
+            manifests, output_path, use_config=use_config
+        ):
+            return True
+        if shutil.which("dot") is None:
             return False
 
         command: list[str] = [

@@ -55,7 +55,13 @@ def render_visualization_block(viz: VisualizationSpec) -> str:
             lines.append(
                 "_Diagrama gerado com "
                 "[KubeDiagrams](https://github.com/philippemerle/KubeDiagrams) "
-                "a partir dos manifests YAML listados abaixo._"
+                "a partir dos manifests YAML listados abaixo. "
+                "Cores: Workloads (azul), Pods (azul-claro), Configuration (cinza), "
+                "Storage (âmbar), Networking (verde). "
+                "Leitura: Workloads → Configuration → Storage à esquerda; "
+                "Networking à direita. "
+                "Pods equivalentes são agrupados com o rótulo `nome (N replicas)`. "
+                "Services exibem a porta (`nome:8000`)._"
             )
             lines.append("")
         if viz.yaml_sources:

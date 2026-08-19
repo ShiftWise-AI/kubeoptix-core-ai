@@ -8,14 +8,20 @@ from pathlib import Path
 
 from kubeoptix_core_ai.discovery.apps import merge_file_lists
 from kubeoptix_core_ai.discovery.scanner import discover_namespace
+from kubeoptix_core_ai.normalize.ownership import infer_deployment_from_replicaset_name
+from kubeoptix_core_ai.visualization.kubediagrams.yamlutil import load_diagram_documents
 
-# Controllers de workload canônicos (exclui ReplicaSet histórico e batch jobs).
+# Controllers de workload canônicos e correlatos presentes no inventário.
 _ARCHITECTURE_WORKLOAD_SUBDIRS = frozenset(
     {
         "deployments",
         "statefulsets",
         "daemonsets",
         "deploymentconfigs",
+        "jobs",
+        "cronjobs",
+        "replicationcontrollers",
+        "replicasets",
     }
 )
 
@@ -25,18 +31,54 @@ _ARCHITECTURE_RESOURCE_DIRS = frozenset(
         "statefulsets.apps",
         "daemonsets.apps",
         "deploymentconfigs.apps.openshift.io",
+        "jobs.batch",
+        "cronjobs.batch",
+        "replicationcontrollers",
+        "replicasets.apps",
     }
 )
 
-# Recursos de comunicação e execução para o diagrama simplificado.
 _ARCHITECTURE_SUPPORTING_RESOURCES = (
     "service_files",
     "route_files",
     "pod_files",
+    "configmap_files",
+    "secret_files",
+    "pvc_files",
+    "hpa_files",
+    "vpa_files",
+    "pdb_files",
 )
 
-_COMMUNICATION_RESOURCE_DIRS = (
+_EXTRA_RESOURCE_DIRS = (
     "ingresses.networking.k8s.io",
+    "networkpolicies.networking.k8s.io",
+    "persistentvolumes",
+    "storageclasses.storage.k8s.io",
+    "serviceaccounts",
+)
+
+_EXTRA_APP_SUBDIRS = (
+    "ingresses",
+    "networkpolicies",
+    "serviceaccounts",
+    "persistentvolumeclaims",
+    "pvc",
+)
+
+_NOISY_DERIVED_DIR_MARKERS = (
+    "/endpointslices.discovery.k8s.io/",
+    "/endpoints/",
+    "/leases.coordination.k8s.io/",
+    "/controllerrevisions.apps/",
+    "/events.events.k8s.io/",
+    "/pods.metrics.k8s.io/",
+)
+
+_PLATFORM_NOISE_SUBDIRS = (
+    "/configmaps/",
+    "/secrets/",
+    "/serviceaccounts/",
 )
 
 _COMMON_OCP_CONFIGMAPS = frozenset(
@@ -58,6 +100,13 @@ _COMMON_OCP_SECRETS = frozenset(
         "deployer-token",
     }
 )
+_COMMON_OCP_SERVICE_ACCOUNTS = frozenset(
+    {
+        "default",
+        "builder",
+        "deployer",
+    }
+)
 _SERVICE_ACCOUNT_TOKEN_PATTERN = re.compile(r".+-token-[a-z0-9]{4,}$")
 _GLOBAL_NO_APP_SEGMENTS = (
     "/apps/__sem_app__/",
@@ -69,26 +118,27 @@ _ENV_INCLUDE_COMMON = "KUBEOPTIX_DIAGRAM_INCLUDE_COMMON_OCP"
 _ENV_INCLUDE_PATH_REGEX = "KUBEOPTIX_DIAGRAM_INCLUDE_PATH_REGEX"
 _ENV_EXCLUDE_PATH_REGEX = "KUBEOPTIX_DIAGRAM_EXCLUDE_PATH_REGEX"
 
+# Camadas do inventário (o layout visual é ajustado no renderer).
 _LAYER_ORDER = {
-    "lb": 0,
-    "route": 0,
-    "service": 1,
-    "ingress": 1,
-    "network_policy": 1,
-    "workload": 2,
-    "rbac": 2,
+    "configmap": 0,
+    "secret": 0,
+    "sa": 0,
+    "workload": 1,
+    "hpa": 2,
+    "vpa": 2,
+    "pdb": 2,
+    "job": 2,
+    "cronjob": 2,
     "pod": 3,
-    "hpa": 4,
-    "vpa": 4,
-    "pdb": 4,
-    "job": 4,
-    "cronjob": 4,
-    "configmap": 5,
-    "secret": 5,
+    "route": 4,
+    "lb": 4,
+    "ingress": 4,
+    "service": 4,
+    "network_policy": 4,
     "pvc": 5,
     "pv": 5,
     "storage_class": 5,
-    "sa": 5,
+    "rbac": 7,
     "other": 9,
 }
 
@@ -142,8 +192,8 @@ def _sort_for_architecture(paths: tuple[Path, ...]) -> tuple[Path, ...]:
     """
     Ordena manifests por camada arquitetural para facilitar leitura do diagrama.
 
-    A ordem busca favorecer visualmente os fluxos:
-    entrada (Route) → exposição (Service) → execução (Workload/Pod) → suporte.
+    A ordem agrupa o inventário por camada (config, workload, pod, rede, storage);
+    o posicionamento visual (esquerda/direita) é aplicado no renderer.
     """
     return tuple(
         sorted(
@@ -153,15 +203,42 @@ def _sort_for_architecture(paths: tuple[Path, ...]) -> tuple[Path, ...]:
     )
 
 
+def _is_build_artifact(path: Path) -> bool:
+    """BuildConfigs, Builds, ImageStreams e pods de build OpenShift."""
+    raw = str(path).lower()
+    if any(
+        marker in raw
+        for marker in (
+            "/buildconfigs",
+            "/builds.build.openshift.io/",
+            "/imagestreams.image.openshift.io/",
+            "/imagestreams/",
+        )
+    ):
+        return True
+    if "/pods/" in raw and path.stem.lower().endswith("-build"):
+        return True
+    return False
+
+
+def _is_noisy_derived_path(path: Path) -> bool:
+    raw = str(path).lower()
+    return any(marker in raw for marker in _NOISY_DERIVED_DIR_MARKERS)
+
+
 def _is_common_ocp_artifact(path: Path) -> bool:
     """Filtra artefatos padrão de plataforma que poluem a arquitetura."""
     raw = str(path).lower()
     stem = path.stem.lower()
     if any(segment in raw for segment in _GLOBAL_NO_APP_SEGMENTS):
-        return True
+        if "/resources/namespaces/" in raw:
+            return True
+        if any(subdir in raw for subdir in _PLATFORM_NOISE_SUBDIRS):
+            return True
 
     if "/configmaps/" in raw and (
         stem in _COMMON_OCP_CONFIGMAPS
+        or stem.endswith("-ca")
         or stem.endswith("-global-ca")
         or stem.endswith("-sys-config")
     ):
@@ -171,6 +248,8 @@ def _is_common_ocp_artifact(path: Path) -> bool:
             return True
         if _SERVICE_ACCOUNT_TOKEN_PATTERN.match(stem):
             return True
+    if "/serviceaccounts/" in raw and stem in _COMMON_OCP_SERVICE_ACCOUNTS:
+        return True
     return False
 
 
@@ -224,6 +303,95 @@ def _is_architecture_workload(path: Path) -> bool:
     return False
 
 
+def _is_controller_path(path: Path) -> bool:
+    raw = str(path).lower()
+    markers = (
+        "/deployments/",
+        "/deployments.apps/",
+        "/statefulsets/",
+        "/statefulsets.apps/",
+        "/daemonsets/",
+        "/daemonsets.apps/",
+        "/deploymentconfigs/",
+        "/deploymentconfigs.apps.openshift.io/",
+        "/replicationcontrollers/",
+        "/cronjobs/",
+        "/cronjobs.batch/",
+    )
+    return any(marker in raw for marker in markers)
+
+
+def _is_replicaset_path(path: Path) -> bool:
+    raw = str(path).lower()
+    return "/replicasets/" in raw or "/replicasets.apps/" in raw
+
+
+def _peek_kind_and_owners(path: Path) -> tuple[str | None, tuple[tuple[str, str], ...]]:
+    documents = load_diagram_documents(path)
+    document = next((item for item in documents if item.get("kind")), None)
+    if not isinstance(document, dict):
+        return None, ()
+    kind = str(document.get("kind") or "") or None
+    metadata = document.get("metadata")
+    if not isinstance(metadata, dict):
+        return kind, ()
+    owners_raw = metadata.get("ownerReferences")
+    owners: list[tuple[str, str]] = []
+    if isinstance(owners_raw, list):
+        for owner in owners_raw:
+            if not isinstance(owner, dict):
+                continue
+            owner_kind = str(owner.get("kind") or "")
+            owner_name = str(owner.get("name") or "")
+            if owner_kind and owner_name:
+                owners.append((owner_kind, owner_name))
+    return kind, tuple(owners)
+
+
+def _prefer_resources_path(existing: Path, candidate: Path) -> Path:
+    if "/resources/" in str(candidate) and "/resources/" not in str(existing):
+        return candidate
+    return existing
+
+
+def _dedupe_by_kind_and_name(paths: tuple[Path, ...]) -> tuple[Path, ...]:
+    """Um objeto (kind + nome) entra uma vez; `resources/` tem precedência."""
+    seen: dict[str, Path] = {}
+    order: list[str] = []
+    for path in paths:
+        kind, _ = _peek_kind_and_owners(path)
+        key = f"{kind or 'unknown'}:{path.stem.lower()}"
+        if key not in seen:
+            order.append(key)
+            seen[key] = path
+            continue
+        seen[key] = _prefer_resources_path(seen[key], path)
+    return tuple(seen[key] for key in order)
+
+
+def _filter_derived_replicasets(paths: tuple[Path, ...]) -> tuple[Path, ...]:
+    """Remove ReplicaSets intermediários quando o controller dono já está no diagrama."""
+    controller_names = {path.stem for path in paths if _is_controller_path(path)}
+    kept: list[Path] = []
+    for path in paths:
+        if not _is_replicaset_path(path):
+            kept.append(path)
+            continue
+        kind, owners = _peek_kind_and_owners(path)
+        if kind != "ReplicaSet":
+            kept.append(path)
+            continue
+        owned_by_selected = any(
+            owner_kind in {"Deployment", "DeploymentConfig"} and owner_name in controller_names
+            for owner_kind, owner_name in owners
+        )
+        inferred = infer_deployment_from_replicaset_name(path.stem)
+        if owned_by_selected or (inferred is not None and inferred in controller_names):
+            continue
+        kept.append(path)
+    return tuple(kept)
+
+
 def _platform_route_files(namespace_root: Path) -> tuple[Path, ...]:
     """Routes em ``apps/__sem_app__/routes`` (plataforma OpenShift)."""
     routes_dir = namespace_root / "apps" / "__sem_app__" / "routes"
@@ -232,10 +400,13 @@ def _platform_route_files(namespace_root: Path) -> tuple[Path, ...]:
     return tuple(sorted(routes_dir.glob("*.yaml")))
 
 
-def _communication_ingress_files(namespace_root: Path) -> tuple[Path, ...]:
-    """Ingresses usados na camada de entrada HTTP(S)."""
+def _collect_named_dirs(
+    namespace_root: Path,
+    resource_dirs: tuple[str, ...],
+    app_subdirs: tuple[str, ...],
+) -> tuple[Path, ...]:
     selected: list[Path] = []
-    for resource_dir in _COMMUNICATION_RESOURCE_DIRS:
+    for resource_dir in resource_dirs:
         res_dir = namespace_root / "resources" / resource_dir
         if res_dir.is_dir():
             selected.extend(sorted(res_dir.glob("*.yaml")))
@@ -244,19 +415,21 @@ def _communication_ingress_files(namespace_root: Path) -> tuple[Path, ...]:
         for app_dir in sorted(apps_dir.iterdir()):
             if not app_dir.is_dir():
                 continue
-            ingress_dir = app_dir / "ingresses"
-            if ingress_dir.is_dir():
-                selected.extend(sorted(ingress_dir.glob("*.yaml")))
+            for subdir in app_subdirs:
+                target = app_dir / subdir
+                if target.is_dir():
+                    selected.extend(sorted(target.glob("*.yaml")))
     return tuple(selected)
 
 
 def select_architecture_manifests(namespace_root: Path) -> tuple[Path, ...]:
     """
-    Seleciona YAMLs para o diagrama simplificado de comunicação do namespace.
+    Seleciona YAMLs do inventário para o diagrama de arquitetura do namespace.
 
-    Inclui apenas recursos que representam fluxo de comunicação:
-    Routes, Ingresses, Services, controllers de workload e Pods (agrupados).
-    Exclui ConfigMaps, Secrets, RBAC, storage, autoscalers e artefatos de plataforma.
+    Inclui workloads, pods (depois agrupados), networking, storage e
+    configuração presentes nos arquivos. Não inventa objetos. Exclui artefatos
+    de plataforma, recursos de Build e recursos derivados ruidosos
+    (Endpoints, Leases, ReplicaSets intermediários).
     """
     if not namespace_root.is_dir():
         return ()
@@ -272,7 +445,7 @@ def select_architecture_manifests(namespace_root: Path) -> tuple[Path, ...]:
         workload_files,
         *supporting_groups,
         _platform_route_files(namespace_root),
-        _communication_ingress_files(namespace_root),
+        _collect_named_dirs(namespace_root, _EXTRA_RESOURCE_DIRS, _EXTRA_APP_SUBDIRS),
     )
     include_common = _env_flag(_ENV_INCLUDE_COMMON, default=False)
     include_patterns = _env_regexes(_ENV_INCLUDE_PATH_REGEX)
@@ -284,7 +457,13 @@ def select_architecture_manifests(namespace_root: Path) -> tuple[Path, ...]:
         if not force_include:
             if _matches_any(path, exclude_patterns):
                 continue
+            if _is_build_artifact(path):
+                continue
+            if _is_noisy_derived_path(path):
+                continue
             if not include_common and _is_common_ocp_artifact(path):
                 continue
         filtered.append(path)
-    return _sort_for_architecture(tuple(filtered))
+    return _sort_for_architecture(
+        _filter_derived_replicasets(_dedupe_by_kind_and_name(tuple(filtered)))
+    )

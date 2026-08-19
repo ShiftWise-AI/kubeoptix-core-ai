@@ -51,7 +51,7 @@ def test_select_architecture_manifests_includes_workload_service_route(
     assert not any("replicaset" in str(path).lower() for path in manifests)
 
 
-def test_select_architecture_manifests_includes_communication_resources_only(
+def test_select_architecture_manifests_includes_inventory_categories(
     tmp_path: Path,
 ) -> None:
     ns = tmp_path / EXAMPLE_NAMESPACE
@@ -105,13 +105,13 @@ def test_select_architecture_manifests_includes_communication_resources_only(
     assert any("/services/" in path for path in paths)
     assert any("/pods/" in path for path in paths)
     assert any("/ingresses.networking.k8s.io/" in path for path in paths)
-    assert not any("/configmaps/" in path for path in paths)
-    assert not any("/secrets/" in path for path in paths)
-    assert not any("/persistentvolumeclaims/" in path for path in paths)
-    assert not any("/hpa/" in path for path in paths)
+    assert any("/configmaps/" in path for path in paths)
+    assert any("/secrets/" in path for path in paths)
+    assert any("/persistentvolumeclaims/" in path for path in paths)
+    assert any("/hpa/" in path for path in paths)
 
 
-def test_select_architecture_manifests_includes_ingress_only_from_additional_kinds(
+def test_select_architecture_manifests_includes_networking_and_config_kinds(
     tmp_path: Path,
 ) -> None:
     ns = tmp_path / EXAMPLE_NAMESPACE
@@ -142,8 +142,8 @@ def test_select_architecture_manifests_includes_ingress_only_from_additional_kin
     paths = {str(path) for path in manifests}
 
     assert any("/ingresses.networking.k8s.io/" in path for path in paths)
-    assert not any("/networkpolicies.networking.k8s.io/" in path for path in paths)
-    assert not any("/serviceaccounts/" in path for path in paths)
+    assert any("/networkpolicies.networking.k8s.io/" in path for path in paths)
+    assert any("/serviceaccounts/" in path for path in paths)
 
 
 def test_select_architecture_manifests_excludes_noisy_derived_resources(
@@ -163,7 +163,13 @@ def test_select_architecture_manifests_excludes_noisy_derived_resources(
         encoding="utf-8",
     )
     (ns / "resources" / "replicasets.apps" / "backend-rs.yaml").write_text(
-        "apiVersion: apps/v1\nkind: ReplicaSet\nmetadata:\n  name: backend-rs\n",
+        "apiVersion: apps/v1\n"
+        "kind: ReplicaSet\n"
+        "metadata:\n"
+        "  name: backend-acesso-app-7f98c8d4c9\n"
+        "  ownerReferences:\n"
+        "    - kind: Deployment\n"
+        "      name: backend-acesso-app\n",
         encoding="utf-8",
     )
     (ns / "resources" / "endpointslices.discovery.k8s.io" / "backend-es.yaml").write_text(
@@ -194,6 +200,48 @@ def test_select_architecture_manifests_excludes_noisy_derived_resources(
     assert not any("/leases.coordination.k8s.io/" in path for path in paths)
 
 
+def test_select_architecture_manifests_keeps_standalone_replicaset(
+    tmp_path: Path,
+) -> None:
+    ns = tmp_path / EXAMPLE_NAMESPACE
+    (ns / "resources" / "replicasets.apps").mkdir(parents=True)
+    (ns / "resources" / "replicasets.apps" / "orphan-rs.yaml").write_text(
+        "apiVersion: apps/v1\nkind: ReplicaSet\nmetadata:\n  name: orphan-rs\n",
+        encoding="utf-8",
+    )
+
+    manifests = select_architecture_manifests(ns)
+    paths = {str(path) for path in manifests}
+    assert any("/replicasets.apps/orphan-rs.yaml" in path for path in paths)
+
+
+def test_select_architecture_manifests_excludes_build_resources(
+    tmp_path: Path,
+) -> None:
+    ns = tmp_path / EXAMPLE_NAMESPACE
+    (ns / "resources" / "buildconfigs.build.openshift.io").mkdir(parents=True)
+    (ns / "resources" / "imagestreams.image.openshift.io").mkdir(parents=True)
+    (ns / "resources" / "pods").mkdir(parents=True)
+    (ns / "resources" / "buildconfigs.build.openshift.io" / "app-bc.yaml").write_text(
+        "apiVersion: build.openshift.io/v1\nkind: BuildConfig\nmetadata:\n  name: app-bc\n",
+        encoding="utf-8",
+    )
+    (ns / "resources" / "imagestreams.image.openshift.io" / "app.yaml").write_text(
+        "apiVersion: image.openshift.io/v1\nkind: ImageStream\nmetadata:\n  name: app\n",
+        encoding="utf-8",
+    )
+    (ns / "resources" / "pods" / "app-1-build.yaml").write_text(
+        "apiVersion: v1\nkind: Pod\nmetadata:\n  name: app-1-build\n",
+        encoding="utf-8",
+    )
+
+    manifests = select_architecture_manifests(ns)
+    paths = {str(path) for path in manifests}
+    assert not any("/buildconfigs.build.openshift.io/" in path for path in paths)
+    assert not any("/imagestreams.image.openshift.io/" in path for path in paths)
+    assert not any(path.endswith("app-1-build.yaml") for path in paths)
+
+
 def test_select_architecture_manifests_prioritizes_layered_order(
     tmp_path: Path,
 ) -> None:
@@ -220,6 +268,11 @@ def test_select_architecture_manifests_prioritizes_layered_order(
         "apiVersion: v1\nkind: Pod\nmetadata:\n  name: backend-acesso-app-12345\n",
         encoding="utf-8",
     )
+    (app / "configmaps").mkdir(parents=True)
+    (app / "configmaps" / "backend-cm.yaml").write_text(
+        "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: backend-cm\n",
+        encoding="utf-8",
+    )
 
     manifests = select_architecture_manifests(ns)
     ordered = [str(path) for path in manifests]
@@ -228,8 +281,10 @@ def test_select_architecture_manifests_prioritizes_layered_order(
     service_idx = next(i for i, p in enumerate(ordered) if "/services/" in p)
     workload_idx = next(i for i, p in enumerate(ordered) if "/deployments/" in p)
     pod_idx = next(i for i, p in enumerate(ordered) if "/pods/" in p)
+    config_idx = next(i for i, p in enumerate(ordered) if "/configmaps/" in p)
 
-    assert route_idx < service_idx < workload_idx < pod_idx
+    assert config_idx < workload_idx < pod_idx < service_idx
+    assert pod_idx < route_idx
 
 
 def test_select_architecture_manifests_excludes_common_ocp_artifacts(
@@ -240,6 +295,7 @@ def test_select_architecture_manifests_excludes_common_ocp_artifacts(
     (app / "deployments").mkdir(parents=True)
     (app / "configmaps").mkdir(parents=True)
     (app / "secrets").mkdir(parents=True)
+    (ns / "resources" / "serviceaccounts").mkdir(parents=True)
 
     (app / "deployments" / "backend-acesso-app.yaml").write_text(
         "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: backend-acesso-app\n",
@@ -247,6 +303,10 @@ def test_select_architecture_manifests_excludes_common_ocp_artifacts(
     )
     (app / "configmaps" / "kube-root-ca.crt.yaml").write_text(
         "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: kube-root-ca.crt\n",
+        encoding="utf-8",
+    )
+    (app / "configmaps" / "backend-1-ca.yaml").write_text(
+        "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: backend-1-ca\n",
         encoding="utf-8",
     )
     (app / "configmaps" / "backend-config.yaml").write_text(
@@ -261,15 +321,36 @@ def test_select_architecture_manifests_excludes_common_ocp_artifacts(
         "apiVersion: v1\nkind: Secret\nmetadata:\n  name: backend-secret\n",
         encoding="utf-8",
     )
+    (ns / "resources" / "serviceaccounts" / "default.yaml").write_text(
+        "apiVersion: v1\nkind: ServiceAccount\nmetadata:\n  name: default\n",
+        encoding="utf-8",
+    )
+    (ns / "resources" / "serviceaccounts" / "deployer.yaml").write_text(
+        "apiVersion: v1\nkind: ServiceAccount\nmetadata:\n  name: deployer\n",
+        encoding="utf-8",
+    )
+    (ns / "resources" / "serviceaccounts" / "builder.yaml").write_text(
+        "apiVersion: v1\nkind: ServiceAccount\nmetadata:\n  name: builder\n",
+        encoding="utf-8",
+    )
+    (ns / "resources" / "serviceaccounts" / "backend-sa.yaml").write_text(
+        "apiVersion: v1\nkind: ServiceAccount\nmetadata:\n  name: backend-sa\n",
+        encoding="utf-8",
+    )
 
     manifests = select_architecture_manifests(ns)
     names = {path.name for path in manifests}
 
     assert "backend-acesso-app.yaml" in names
-    assert "backend-config.yaml" not in names
-    assert "backend-secret.yaml" not in names
+    assert "backend-config.yaml" in names
+    assert "backend-secret.yaml" in names
+    assert "backend-sa.yaml" in names
     assert "kube-root-ca.crt.yaml" not in names
+    assert "backend-1-ca.yaml" not in names
     assert "default-token-abcd1.yaml" not in names
+    assert "default.yaml" not in names
+    assert "deployer.yaml" not in names
+    assert "builder.yaml" not in names
 
 
 def test_select_architecture_manifests_excludes_global_no_app_objects(

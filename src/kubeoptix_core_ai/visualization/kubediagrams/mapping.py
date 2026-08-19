@@ -34,11 +34,12 @@ class DiagramKind(str, Enum):
 # De/para documentado: tipo de diagrama → objetos YAML incluídos.
 DIAGRAM_YAML_MAPPING: dict[DiagramKind, tuple[str, ...]] = {
     DiagramKind.NAMESPACE_ARCHITECTURE: (
-        "Deployment | StatefulSet | DaemonSet | DeploymentConfig",
-        "Service",
-        "Route (route.openshift.io/v1)",
-        "Ingress (networking.k8s.io/v1)",
-        "Pod (agrupados por workload)",
+        "Deployment | StatefulSet | DaemonSet | DeploymentConfig | Job | CronJob | ReplicationController | ReplicaSet (standalone)",
+        "Pod (agrupados por workload, com contagem de réplicas)",
+        "HPA | VPA | PDB",
+        "Service | Route | Ingress | NetworkPolicy",
+        "PersistentVolume | PersistentVolumeClaim | StorageClass",
+        "ConfigMap | Secret | ServiceAccount",
     ),
     DiagramKind.WORKLOAD: (
         "Deployment (workloads do grupo)",

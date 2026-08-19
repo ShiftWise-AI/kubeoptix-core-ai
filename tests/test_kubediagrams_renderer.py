@@ -87,8 +87,13 @@ def test_render_namespace_architecture_invokes_cli(tmp_path: Path) -> None:
         rel = renderer.render_namespace_architecture(namespace_root)
 
     assert rel == "assets/namespace_architecture.png"
-    run_mock.assert_called_once()
-    command = run_mock.call_args.args[0]
+    png_commands = [
+        call.args[0]
+        for call in run_mock.call_args_list
+        if call.args and "png" in call.args[0]
+    ]
+    assert png_commands
+    command = png_commands[-1]
     assert command[0] == "/usr/bin/kube-diagrams"
     assert "-f" in command and "png" in command
     assert "-n" not in command
@@ -153,7 +158,7 @@ def test_render_manifests_skips_invalid_yaml_and_uses_valid_files(tmp_path: Path
     )
     invalid_manifest = tmp_path / "invalid.yaml"
     invalid_manifest.write_text(
-        "apiVersion: v1\nkind: Service\nmetadata:\n\tname: svc\n",  # tab invalida em YAML
+        "{ this is not recoverable yaml [[[",
         encoding="utf-8",
     )
 
@@ -260,6 +265,7 @@ def test_render_manifests_normalizes_namespace_without_clustering_labels(tmp_pat
     assert "namespace: example-ns" in rendered
     assert "app.kubernetes.io/name" not in rendered
     assert "helm.sh/chart" not in rendered
+    assert "kubeoptix.io/cat-workloads: Workloads" in rendered
     assert manifest.read_text(encoding="utf-8") == original
 
 
@@ -441,5 +447,260 @@ def test_render_manifests_groups_equivalent_pods_with_count_label(tmp_path: Path
     assert rel == "assets/pods.png"
     assert len(used_manifest_paths) == 2
     merged_content = "\n".join(used_manifest_contents)
-    assert "kubeoptix.io/pod-group-size: '2'" in merged_content
+    assert "kubeoptix.io/pod-group-size: '2'" in merged_content or "kubeoptix.io/pod-group-size: \"2\"" in merged_content or "kubeoptix.io/pod-group-size: 2" in merged_content
     assert "kubeoptix.io/pod-group: payment-api" in merged_content
+    assert "payment-api (2 replicas)" in merged_content
+    assert "kubeoptix.io/cat-pods: Pods" in merged_content
+    assert "kubeoptix.io/cat-workloads: Workloads" in merged_content
+
+
+def test_bundled_kube_diagrams_config_defines_category_clusters() -> None:
+    from kubeoptix_core_ai.visualization.kubediagrams.config import bundled_config_path
+    import yaml
+
+    config_path = bundled_config_path()
+    assert config_path is not None
+    loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert "nodes" in loaded
+    assert "clusters" in loaded
+    labels = {item.get("label") for item in loaded["clusters"] if isinstance(item, dict)}
+    assert "kubeoptix.io/cat-workloads" in labels
+    assert "kubeoptix.io/cat-networking" in labels
+    assert "kubeoptix.io/cat-storage" in labels
+    assert "kubeoptix.io/cat-config" in labels
+    assert "kubeoptix.io/cat-build" not in labels
+    cluster_labels = [
+        item.get("label") for item in loaded["clusters"] if isinstance(item, dict)
+    ]
+    assert cluster_labels.index("kubeoptix.io/cat-workloads") < cluster_labels.index(
+        "kubeoptix.io/cat-config"
+    )
+    assert cluster_labels.index("kubeoptix.io/cat-config") < cluster_labels.index(
+        "kubeoptix.io/cat-storage"
+    )
+    assert cluster_labels.index("kubeoptix.io/cat-storage") < cluster_labels.index(
+        "kubeoptix.io/cat-networking"
+    )
+    assert "Route/route.openshift.io/v1" in loaded["nodes"]
+    assert loaded["nodes"]["BuildConfig/build.openshift.io/v1"]["show"] is False
+
+
+def test_tune_dot_layout_sets_namespace_rankdir_tb() -> None:
+    renderer = KubeDiagramsRenderer(Path("/tmp"), namespace="shiftwise-ai")
+    source = (
+        "digraph {\n"
+        '\tsubgraph "cluster_Namespace: shiftwise-ai" {\n'
+        '\t\tgraph [bgcolor=white rankdir=LR tooltip="Namespace: shiftwise-ai"]\n'
+        "\t}\n"
+        "}\n"
+    )
+    tuned = renderer._tune_dot_layout(source)
+    assert "rankdir=TB" in tuned
+    assert tuned.count("rankdir=LR") == 0
+
+
+def test_tune_dot_layout_stacks_left_column_and_networking_right() -> None:
+    renderer = KubeDiagramsRenderer(Path("/tmp"), namespace="shiftwise-ai")
+    source = """digraph {
+	graph [fontcolor="#2D3436" rankdir=TB splines=ortho]
+	subgraph "cluster_Namespace: ns" {
+		graph [bgcolor=white rankdir=LR tooltip="Namespace: ns"]
+		subgraph cluster_Configuration {
+			graph [label=Configuration rank=min]
+			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" [label="cm"]
+		}
+		subgraph cluster_Workloads {
+			graph [label=Workloads]
+			bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb [label="sts"]
+			subgraph cluster_Pods {
+				graph [label=Pods]
+				"cccccccccccccccccccccccccccccccc" [label="pod"]
+			}
+		}
+		subgraph cluster_Networking {
+			graph [label=Networking]
+			"dddddddddddddddddddddddddddddddd" [label="svc"]
+		}
+		subgraph cluster_Storage {
+			graph [label=Storage]
+			"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" [label="pvc"]
+		}
+	}
+	bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb -> "cccccccccccccccccccccccccccccccc" [style=dotted]
+	bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb -> "dddddddddddddddddddddddddddddddd" [style=solid]
+	"cccccccccccccccccccccccccccccccc" -> "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" [style=solid]
+	"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" -> bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb [style=solid]
+}
+"""
+    tuned = renderer._tune_dot_layout(source)
+    left_idx = tuned.find("subgraph cluster_kubeoptix_left")
+    workloads_idx = tuned.find("subgraph cluster_Workloads")
+    config_idx = tuned.find("subgraph cluster_Configuration")
+    storage_idx = tuned.find("subgraph cluster_Storage")
+    networking_idx = tuned.find("subgraph cluster_Networking")
+    assert 0 <= left_idx < workloads_idx < config_idx < storage_idx < networking_idx
+    assert "rank=min" not in tuned
+    assert "newrank=true" in tuned
+    assert "compound=true" in tuned
+    assert "constraint=false" in tuned
+    assert "{ rank=same; bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; \"dddddddddddddddddddddddddddddddd\"; }" in tuned
+    assert "cccccccccccccccccccccccccccccccc" in tuned
+    assert "style=invis" in tuned
+
+
+
+def test_render_manifests_recovers_placeholder_sanitized_pods(tmp_path: Path) -> None:
+    assets_dir = tmp_path / "assets"
+    renderer = KubeDiagramsRenderer(
+        assets_dir,
+        namespace="shiftwise-ai",
+        path_prefix="assets",
+    )
+    pods_dir = tmp_path / "resources" / "pods"
+    pods_dir.mkdir(parents=True)
+    pod = pods_dir / "kubeoptix-harvester-0.yaml"
+    pod.write_text(
+        "apiVersion: v1\n"
+        "kind: Pod\n"
+        "metadata:\n"
+        "  name: kubeoptix-harvester-0\n"
+        "  namespace: shiftwise-ai\n"
+        "  labels:\n"
+        "    app.kubernetes.io/name: kubeoptix-harvester\n"
+        "  uid: [RG_REMOVIDO]-0a35-4eff-90af-458990df5b00\n"
+        "spec:\n"
+        "  serviceAccountName: shiftwisea-ai-user\n"
+        "  securityContext:\n"
+        "    runAsUser: [TELEFONE_REMOVIDO]\n"
+        "  volumes:\n"
+        "  - name: kube-api-access\n"
+        "    projected:\n"
+        "      sources:\n"
+        "      - [TOKEN_EXPLICITO_REMOVIDO]: 3607\n"
+        "          path: token\n",
+        encoding="utf-8",
+    )
+
+    used_contents: list[str] = []
+
+    def _fake_run(command, **kwargs):
+        for item in command:
+            path = Path(str(item))
+            if path.suffix == ".yaml" and path.is_file():
+                used_contents.append(path.read_text(encoding="utf-8"))
+        output = Path(command[command.index("-o") + 1])
+        output.write_bytes(b"png")
+
+        class _Result:
+            returncode = 0
+            stderr = ""
+
+        return _Result()
+
+    with (
+        patch(
+            "kubeoptix_core_ai.visualization.kubediagrams.renderer.is_kubediagrams_available",
+            return_value=True,
+        ),
+        patch(
+            "kubeoptix_core_ai.visualization.kubediagrams.renderer.shutil.which",
+            side_effect=lambda name: f"/usr/bin/{name}",
+        ),
+        patch(
+            "kubeoptix_core_ai.visualization.kubediagrams.renderer.find_kube_diagrams_executable",
+            return_value="/usr/bin/kube-diagrams",
+        ),
+        patch(
+            "kubeoptix_core_ai.visualization.kubediagrams.renderer.subprocess.run",
+            side_effect=_fake_run,
+        ),
+    ):
+        rel = renderer.render_manifests("pods", (pod,))
+
+    assert rel == "assets/pods.png"
+    merged = "\n".join(used_contents)
+    assert "kubeoptix-harvester" in merged
+    assert "kind: Pod" in merged
+
+
+def test_render_manifests_appends_service_ports_and_patches_routes(tmp_path: Path) -> None:
+    assets_dir = tmp_path / "assets"
+    renderer = KubeDiagramsRenderer(
+        assets_dir,
+        namespace="shiftwise-ai",
+        path_prefix="assets",
+    )
+    services_dir = tmp_path / "resources" / "services"
+    routes_dir = tmp_path / "resources" / "routes.route.openshift.io"
+    services_dir.mkdir(parents=True)
+    routes_dir.mkdir(parents=True)
+    service = services_dir / "harvester-api.yaml"
+    route = routes_dir / "harvester.yaml"
+    service.write_text(
+        "apiVersion: v1\n"
+        "kind: Service\n"
+        "metadata:\n"
+        "  name: harvester-api\n"
+        "  namespace: shiftwise-ai\n"
+        "spec:\n"
+        "  ports:\n"
+        "  - name: http\n"
+        "    port: 8000\n"
+        "    targetPort: 8000\n",
+        encoding="utf-8",
+    )
+    route.write_text(
+        "apiVersion: route.openshift.io/v1\n"
+        "kind: Route\n"
+        "metadata:\n"
+        "  name: harvester\n"
+        "  namespace: shiftwise-ai\n"
+        "spec:\n"
+        "  to:\n"
+        "    kind: Service\n"
+        "    name: harvester-api\n",
+        encoding="utf-8",
+    )
+
+    used_contents: list[str] = []
+
+    def _fake_run(command, **kwargs):
+        for item in command:
+            path = Path(str(item))
+            if path.suffix in {".yaml", ".yml"} and path.is_file():
+                used_contents.append(path.read_text(encoding="utf-8"))
+        output = Path(command[command.index("-o") + 1])
+        output.write_bytes(b"png")
+
+        class _Result:
+            returncode = 0
+            stderr = ""
+
+        return _Result()
+
+    with (
+        patch(
+            "kubeoptix_core_ai.visualization.kubediagrams.renderer.is_kubediagrams_available",
+            return_value=True,
+        ),
+        patch(
+            "kubeoptix_core_ai.visualization.kubediagrams.renderer.shutil.which",
+            side_effect=lambda name: f"/usr/bin/{name}",
+        ),
+        patch(
+            "kubeoptix_core_ai.visualization.kubediagrams.renderer.find_kube_diagrams_executable",
+            return_value="/usr/bin/kube-diagrams",
+        ),
+        patch(
+            "kubeoptix_core_ai.visualization.kubediagrams.renderer.subprocess.run",
+            side_effect=_fake_run,
+        ),
+    ):
+        rel = renderer.render_manifests("net", (service, route))
+
+    assert rel == "assets/net.png"
+    merged = "\n".join(used_contents)
+    assert "harvester-api:8000" in merged
+    assert "kind: Route" in merged
+    assert "kind: Service" in merged
+

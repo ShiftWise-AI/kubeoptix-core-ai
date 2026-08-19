@@ -499,16 +499,25 @@ def _runtime_metrics_table(workloads: tuple[Workload, ...]) -> str:
 def _architecture_legend_kubediagrams() -> str:
     return (
         "**Diagrama gerado com [KubeDiagrams](https://github.com/philippemerle/KubeDiagrams)** "
-        "a partir dos manifests YAML do namespace.\n\n"
-        "- **Namespace** — quadro único com Routes, Ingresses, Services, workloads e Pods.\n"
-        "- **Comunicação interna** — arestas entre Service, workload e Pod (selector/controller).\n"
-        "- **Comunicação externa** — destinos `ExternalName` e peers no namespace `external`, "
-        "fora do quadro do namespace analisado.\n\n"
-        "**Tipos de aresta:** relações nativas do KubeDiagrams (ex.: `selector`, `controller`, "
-        "`spec.to`).\n\n"
-        "> Pods equivalentes são agrupados e sinalizados com `kubeoptix.io/pod-group-size`.\n\n"
-        "> Componentes considerados: `Deployment`, `StatefulSet`, `DaemonSet`, "
-        "`DeploymentConfig`, `Pod`, `Service`, `Route` e `Ingress`.\n\n"
+        "a partir dos manifests YAML do namespace. Relacionamentos são apenas os "
+        "comprováveis no inventário (selector, `spec.to`, volumes, envFrom, scaleTargetRef).\n\n"
+        "**Legenda de cores (agrupamentos):**\n"
+        "- **Workloads** — fundo azul (`Deployment`, `StatefulSet`, `DaemonSet`, "
+        "`DeploymentConfig`, `Job`, `CronJob`, HPA/VPA/PDB).\n"
+        "- **Pods** — fundo azul-claro; pods equivalentes aparecem **uma vez**, "
+        "com o rótulo `nome (N replicas)`.\n"
+        "- **Networking** — fundo verde (`Service`, `Route`, `Ingress`, `NetworkPolicy`); "
+        "Services exibem a porta (`nome:8000`).\n"
+        "- **Storage** — fundo âmbar (`PVC`, `PV`, `StorageClass`).\n"
+        "- **Configuration** — fundo cinza (`ConfigMap`, `Secret`, `ServiceAccount`).\n\n"
+        "**Leitura sugerida:** à esquerda Workloads → Configuration → Storage; "
+        "à direita Networking.\n\n"
+        "**Tipos de aresta:** `selector` (tracejada), referência direta (sólida), "
+        "`controller`/`owner` (pontilhada).\n\n"
+        "> Artefatos de Build (`BuildConfig`, `Build`, `ImageStream`, pods `*-build`), "
+        "artefatos padrão de plataforma (SA `default`/`builder`/`deployer`, "
+        "ConfigMaps `*-ca`, tokens de SA) e recursos derivados "
+        "(Endpoints, Leases, ReplicaSets intermediários) são omitidos para legibilidade.\n\n"
         "> Ajustes por ambiente: `KUBEOPTIX_DIAGRAM_INCLUDE_COMMON_OCP`, "
         "`KUBEOPTIX_DIAGRAM_INCLUDE_PATH_REGEX` e `KUBEOPTIX_DIAGRAM_EXCLUDE_PATH_REGEX`.\n"
     )
@@ -520,21 +529,23 @@ def _architecture_legend_custom() -> str:
 
 def _architecture_manifest_breakdown(manifests: tuple[Path, ...]) -> str:
     counts = {
-        "routes": 0,
-        "services": 0,
         "workloads": 0,
         "pods": 0,
+        "networking": 0,
+        "storage": 0,
+        "config": 0,
         "autoscalers": 0,
-        "configmaps": 0,
-        "secrets": 0,
-        "pvcs": 0,
     }
     for manifest in manifests:
         text = str(manifest).lower()
         if "/routes/" in text or "/routes.route.openshift.io/" in text:
-            counts["routes"] += 1
+            counts["networking"] += 1
         elif "/services/" in text:
-            counts["services"] += 1
+            counts["networking"] += 1
+        elif "/ingresses.networking.k8s.io/" in text or "/ingresses/" in text:
+            counts["networking"] += 1
+        elif "/networkpolicies" in text:
+            counts["networking"] += 1
         elif (
             "/deployments/" in text
             or "/deployments.apps/" in text
@@ -544,6 +555,12 @@ def _architecture_manifest_breakdown(manifests: tuple[Path, ...]) -> str:
             or "/daemonsets.apps/" in text
             or "/deploymentconfigs/" in text
             or "/deploymentconfigs.apps.openshift.io/" in text
+            or "/jobs/" in text
+            or "/jobs.batch/" in text
+            or "/cronjobs/" in text
+            or "/cronjobs.batch/" in text
+            or "/replicationcontrollers/" in text
+            or "/replicasets/" in text
         ):
             counts["workloads"] += 1
         elif "/pods/" in text:
@@ -557,17 +574,20 @@ def _architecture_manifest_breakdown(manifests: tuple[Path, ...]) -> str:
             or "/pdb/" in text
         ):
             counts["autoscalers"] += 1
-        elif "/configmaps/" in text:
-            counts["configmaps"] += 1
-        elif "/secrets/" in text:
-            counts["secrets"] += 1
-        elif "/persistentvolumeclaims/" in text or "/pvc/" in text:
-            counts["pvcs"] += 1
+        elif "/configmaps/" in text or "/secrets/" in text or "/serviceaccounts/" in text:
+            counts["config"] += 1
+        elif (
+            "/persistentvolumeclaims/" in text
+            or "/pvc/" in text
+            or "/persistentvolumes/" in text
+            or "/storageclasses" in text
+        ):
+            counts["storage"] += 1
     return (
-        f"Routes: {counts['routes']} | Services: {counts['services']} | "
         f"Workloads: {counts['workloads']} | Pods: {counts['pods']} | "
-        f"Autoscalers/PDB: {counts['autoscalers']} | ConfigMaps: {counts['configmaps']} | "
-        f"Secrets: {counts['secrets']} | PVCs: {counts['pvcs']}"
+        f"Networking: {counts['networking']} | Storage: {counts['storage']} | "
+        f"Config: {counts['config']} | "
+        f"Autoscalers/PDB: {counts['autoscalers']}"
     )
 
 
