@@ -48,6 +48,8 @@ _COMMON_OCP_CONFIGMAPS = frozenset(
         "openshift-service-ca.crt",
         "trusted-ca-bundle",
         "service-ca",
+        "global-ca",
+        "sys-config",
     }
 )
 _COMMON_OCP_SECRETS = frozenset(
@@ -60,6 +62,11 @@ _COMMON_OCP_SECRETS = frozenset(
     }
 )
 _SERVICE_ACCOUNT_TOKEN_PATTERN = re.compile(r".+-token-[a-z0-9]{4,}$")
+_GLOBAL_NO_APP_SEGMENTS = (
+    "/apps/__sem_app__/",
+    "/apps/_no_app_/",
+    "/resources/namespaces/",
+)
 _ENV_INCLUDE_COMMON = "KUBEOPTIX_DIAGRAM_INCLUDE_COMMON_OCP"
 _ENV_INCLUDE_PATH_REGEX = "KUBEOPTIX_DIAGRAM_INCLUDE_PATH_REGEX"
 _ENV_EXCLUDE_PATH_REGEX = "KUBEOPTIX_DIAGRAM_EXCLUDE_PATH_REGEX"
@@ -152,6 +159,8 @@ def _is_common_ocp_artifact(path: Path) -> bool:
     """Filtra artefatos padrão de plataforma que poluem a arquitetura."""
     raw = str(path).lower()
     stem = path.stem.lower()
+    if any(segment in raw for segment in _GLOBAL_NO_APP_SEGMENTS):
+        return True
 
     if "/configmaps/" in raw and stem in _COMMON_OCP_CONFIGMAPS:
         return True
