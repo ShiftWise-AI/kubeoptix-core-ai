@@ -500,7 +500,9 @@ def _architecture_legend_kubediagrams() -> str:
     return (
         "**Diagrama gerado com [KubeDiagrams](https://github.com/philippemerle/KubeDiagrams)** "
         "a partir dos manifests YAML do namespace.\n\n"
-        "- **Ícones** — recursos Kubernetes/OpenShift padrão (Deployment, Service, Route, etc.).\n"
+        "- **Componentes incluídos** — `Deployment`, `StatefulSet`, `DaemonSet`, "
+        "`DeploymentConfig`, `Pod`, `Service`, `Route`, `HPA`, `VPA`, `PDB`, "
+        "`ConfigMap`, `Secret` e `PVC` (quando presentes no inventário).\n"
         "- **Agrupamentos** — namespace e labels de aplicação (`app`, `app.kubernetes.io/name`).\n"
         "- **Arestas** — relações declaradas nos YAMLs (owner, selector, reference).\n\n"
         "> O diagrama reflete o inventário coletado, não o estado em tempo real do cluster.\n"
@@ -519,8 +521,9 @@ def _architecture_legend_custom() -> str:
         "`entre namespaces`, `externo`).\n\n"
         "> Contagem de instâncias nos Pods: réplicas desejadas/prontas do Deployment "
         "(ou pods coletados no inventário, quando aplicável).\n\n"
-        "> O diagrama foca em fluxos de comunicação. Secrets, imagens de container "
-        "e ConfigMaps não são exibidos — apenas relações evidenciadas no inventário YAML.\n"
+        "> Componentes considerados na arquitetura: `Deployment`, `StatefulSet`, "
+        "`DaemonSet`, `DeploymentConfig`, `Pod`, `Service`, `Route`, `HPA`, `VPA`, "
+        "`PDB`, `ConfigMap`, `Secret` e `PVC` (quando presentes no inventário YAML).\n"
     )
 
 

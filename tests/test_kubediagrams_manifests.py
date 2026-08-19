@@ -64,6 +64,7 @@ def test_select_architecture_manifests_includes_supporting_inventory_resources(
     (app / "vpa").mkdir(parents=True)
     (app / "pdb").mkdir(parents=True)
     (ns / "resources" / "persistentvolumeclaims").mkdir(parents=True)
+    (ns / "resources" / "pods").mkdir(parents=True)
     (ns / "resources" / "pods.metrics.k8s.io").mkdir(parents=True)
     (ns / "resources" / "clusterserviceversions.operators.coreos.com").mkdir(parents=True)
 
@@ -85,6 +86,10 @@ def test_select_architecture_manifests_includes_supporting_inventory_resources(
     )
     (ns / "resources" / "persistentvolumeclaims" / "data-backend-acesso-app.yaml").write_text(
         "apiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  name: data-backend-acesso-app\n",
+        encoding="utf-8",
+    )
+    (ns / "resources" / "pods" / "backend-acesso-app-12345.yaml").write_text(
+        "apiVersion: v1\nkind: Pod\nmetadata:\n  name: backend-acesso-app-12345\n",
         encoding="utf-8",
     )
     (app / "hpa" / "backend-acesso-app.yaml").write_text(
@@ -117,11 +122,50 @@ def test_select_architecture_manifests_includes_supporting_inventory_resources(
     assert any("/configmaps/" in path for path in paths)
     assert any("/secrets/" in path for path in paths)
     assert any("/persistentvolumeclaims/" in path for path in paths)
+    assert any("/pods/" in path for path in paths)
     assert any("/hpa/" in path for path in paths)
     assert any("/vpa/" in path for path in paths)
     assert any("/pdb/" in path for path in paths)
     assert not any("pods.metrics.k8s.io" in path for path in paths)
     assert not any("clusterserviceversions.operators.coreos.com" in path for path in paths)
+
+
+def test_select_architecture_manifests_prioritizes_layered_order(
+    tmp_path: Path,
+) -> None:
+    ns = tmp_path / EXAMPLE_NAMESPACE
+    app = ns / "apps" / "backend-acesso-app"
+    (app / "deployments").mkdir(parents=True)
+    (app / "services").mkdir(parents=True)
+    (app / "routes").mkdir(parents=True)
+    (app / "configmaps").mkdir(parents=True)
+
+    (app / "deployments" / "backend-acesso-app.yaml").write_text(
+        "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: backend-acesso-app\n",
+        encoding="utf-8",
+    )
+    (app / "services" / "backend-acesso-app.yaml").write_text(
+        "apiVersion: v1\nkind: Service\nmetadata:\n  name: backend-acesso-app\n",
+        encoding="utf-8",
+    )
+    (app / "routes" / "backend-acesso-app.yaml").write_text(
+        "apiVersion: route.openshift.io/v1\nkind: Route\nmetadata:\n  name: backend-acesso-app\n",
+        encoding="utf-8",
+    )
+    (app / "configmaps" / "backend-acesso-app-cm.yaml").write_text(
+        "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: backend-acesso-app-cm\n",
+        encoding="utf-8",
+    )
+
+    manifests = select_architecture_manifests(ns)
+    ordered = [str(path) for path in manifests]
+
+    route_idx = next(i for i, p in enumerate(ordered) if "/routes/" in p)
+    service_idx = next(i for i, p in enumerate(ordered) if "/services/" in p)
+    workload_idx = next(i for i, p in enumerate(ordered) if "/deployments/" in p)
+    configmap_idx = next(i for i, p in enumerate(ordered) if "/configmaps/" in p)
+
+    assert route_idx < service_idx < workload_idx < configmap_idx
 
 
 def test_select_architecture_manifests_empty_for_missing_dir(tmp_path: Path) -> None:
