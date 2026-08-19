@@ -71,14 +71,21 @@ def test_visualization_bundle_includes_numeric_and_flowcharts(
 
     available = [v for v in viz.visualizations if v.status == VisualizationStatus.AVAILABLE]
     assert any(v.id == "cpu_request" for v in available)
-    assert any(v.id.startswith("ext_comm_") for v in available)
-    assert any(v.id == "workload_node_placement" for v in available)
     for v in available:
         assert v.image_relpath
         assert v.provenance
-    flowcharts = [v for v in available if v.dataset_kind == "flowchart"]
+
+    flowcharts = [v for v in viz.visualizations if v.dataset_kind == "flowchart"]
     assert flowcharts
-    assert all(v.yaml_sources for v in flowcharts)
+    assert not any(v.diagram_engine == "matplotlib" for v in flowcharts)
+    for v in flowcharts:
+        if v.status == VisualizationStatus.AVAILABLE:
+            assert v.diagram_engine == "kubediagrams"
+            assert v.image_relpath
+            assert v.yaml_sources
+        else:
+            assert v.unavailable_reason
+            assert "KubeDiagrams" in v.unavailable_reason
     assert list(assets_dir.glob("*.png"))
 
 

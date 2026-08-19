@@ -528,7 +528,7 @@ def _namespace_architecture_section(
     bundle: AssessmentBundle,
     diagram_renderer: DiagramRenderer | None,
 ) -> str:
-    """Diagrama de arquitetura do namespace (KubeDiagrams padrão, fallback matplotlib)."""
+    """Diagrama de arquitetura do namespace (somente KubeDiagrams)."""
     diagram = build_namespace_architecture_diagram(bundle)
     manifests = manifests_for_namespace_architecture(bundle)
 
@@ -552,18 +552,13 @@ def _namespace_architecture_section(
         used_kubediagrams = result.engine == "kubediagrams"
         yaml_sources = result.yaml_sources
 
-    if image_path is None:
+    if image_path is None or not used_kubediagrams:
         return (
-            "> Diagrama de arquitetura indisponível: KubeDiagrams não instalado ou "
-            "falha na renderização, e não há relações suficientes para o diagrama "
-            "alternativo.\n"
+            "> Diagrama de arquitetura indisponível: KubeDiagrams não instalado "
+            "ou falha na renderização.\n"
         )
 
-    legend = (
-        _architecture_legend_kubediagrams()
-        if used_kubediagrams
-        else _architecture_legend_custom()
-    )
+    legend = _architecture_legend_kubediagrams()
     lines = [legend, ""]
     if yaml_sources:
         lines.append("**Manifests YAML utilizados:**")
