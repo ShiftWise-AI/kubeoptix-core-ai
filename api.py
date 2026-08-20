@@ -8,6 +8,7 @@ import os
 import signal
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
@@ -21,6 +22,11 @@ from pydantic import BaseModel, Field, field_validator
 from kubeoptix_core_ai.api.assessment import (
     AssessmentService,
     NamespaceNotFoundError,
+    dedupe_namespaces,
+)
+from kubeoptix_core_ai.api.progress import (
+    ExecutionStore,
+    RunProgress,
 )
 from kubeoptix_core_ai.errors import AnalyzerError, ConfigurationError
 
@@ -31,6 +37,11 @@ TMP_DIR = Path("/tmp")
 
 _start_monotonic: float = time.monotonic()
 _app_initialized: bool = False
+_execution_store = ExecutionStore()
+_report_executor = ThreadPoolExecutor(
+    max_workers=2,
+    thread_name_prefix="kubeoptix-report",
+)
 
 
 def _resolve_app_version() -> str:
@@ -136,6 +147,27 @@ class AnalysisResponse(BaseModel):
 
     status: str
     reports: list[NamespaceReportResponse]
+
+
+class ReportAcceptedResponse(BaseModel):
+    """Resposta imediata ao iniciar geração assíncrona de relatório."""
+
+    execution_id: str
+    status: str
+    progress: int = Field(ge=0, le=100)
+
+
+class ReportStatusResponse(BaseModel):
+    """Estado de uma execução de análise para polling do frontend."""
+
+    execution_id: str
+    status: str
+    progress: int = Field(ge=0, le=100)
+    message: str = ""
+    processed: int = Field(ge=0, default=0)
+    total: int = Field(ge=0, default=0)
+    report: str | None = None
+    error: str | None = None
 
 
 def _uptime_seconds() -> float:
@@ -308,6 +340,32 @@ def _get_assessment_service() -> AssessmentService:
     return AssessmentService()
 
 
+def _get_execution_store() -> ExecutionStore:
+    return _execution_store
+
+
+def _get_report_executor() -> ThreadPoolExecutor:
+    return _report_executor
+
+
+def _run_report_execution(
+    execution_id: str,
+    namespaces: list[str],
+    enable_ml: bool | None,
+) -> None:
+    store = _get_execution_store()
+    service = _get_assessment_service()
+    progress = RunProgress(store, execution_id, len(namespaces))
+    try:
+        service.run(namespaces, enable_ml=enable_ml, progress=progress)
+    except Exception as exc:
+        logger.exception(
+            "Falha na execução assíncrona do relatório",
+            extra={"execution_id": execution_id, "namespaces": namespaces},
+        )
+        progress.failed("Erro durante a análise dos YAMLs", str(exc))
+
+
 @app.post(
     "/analysis",
     response_model=AnalysisResponse,
@@ -396,6 +454,81 @@ async def run_analysis(request: AnalysisRequest) -> AnalysisResponse:
             )
             for report in result.reports
         ],
+    )
+
+
+@app.post(
+    "/api/reports",
+    response_model=ReportAcceptedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Iniciar geração assíncrona de relatórios",
+    response_description="Execução aceita; consultar o status pelo execution_id.",
+)
+async def start_report(request: AnalysisRequest) -> ReportAcceptedResponse:
+    """
+    Inicia a análise em background e devolve um `execution_id` imediatamente.
+
+    Consulte `GET /api/reports/{execution_id}/status` para acompanhar o
+    progresso (0 a 100) até a geração do Markdown.
+    """
+    ordered = dedupe_namespaces(request.namespaces)
+    service = _get_assessment_service()
+    try:
+        service.validate_namespaces(ordered)
+    except NamespaceNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "message": str(exc),
+                "missing_namespaces": exc.missing,
+            },
+        ) from exc
+    except ConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"message": str(exc)},
+        ) from exc
+
+    store = _get_execution_store()
+    snapshot = store.create(ordered)
+    _get_report_executor().submit(
+        _run_report_execution,
+        snapshot.execution_id,
+        ordered,
+        request.enable_ml,
+    )
+    return ReportAcceptedResponse(
+        execution_id=snapshot.execution_id,
+        status=str(snapshot.status),
+        progress=snapshot.progress,
+    )
+
+
+@app.get(
+    "/api/reports/{execution_id}/status",
+    response_model=ReportStatusResponse,
+    summary="Consultar progresso da geração do relatório",
+    response_description="Estado atual da execução (polling).",
+)
+async def report_status(execution_id: str) -> ReportStatusResponse:
+    snapshot = _get_execution_store().get(execution_id)
+    if snapshot is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "message": "Execução não encontrada",
+                "execution_id": execution_id,
+            },
+        )
+    return ReportStatusResponse(
+        execution_id=snapshot.execution_id,
+        status=str(snapshot.status),
+        progress=snapshot.progress,
+        message=snapshot.message,
+        processed=snapshot.processed,
+        total=snapshot.total,
+        report=snapshot.report,
+        error=snapshot.error,
     )
 
 

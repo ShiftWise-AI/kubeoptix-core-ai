@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from kubeoptix_core_ai.config import AnalyzerConfig
@@ -54,6 +55,50 @@ from kubeoptix_core_ai.parsers.workload_controller import parse_workload_control
 
 logger = get_logger("loaders.workload")
 
+_TRACKED_PATH_ATTRS = frozenset(
+    {
+        "workload_files",
+        "pod_files",
+        "pod_metrics_files",
+        "hpa_files",
+        "vpa_files",
+        "pdb_files",
+        "pvc_files",
+        "service_files",
+        "route_files",
+        "configmap_files",
+        "csv_files",
+        "packagemanifest_files",
+        "pod_log_files",
+    }
+)
+
+
+class _TrackingNamespacePaths:
+    """Itera os arquivos do namespace e reporta progresso após cada um."""
+
+    def __init__(
+        self,
+        paths,
+        on_file_processed: Callable[[int, int], None],
+    ) -> None:
+        self._paths = paths
+        self._on_file_processed = on_file_processed
+        self._attempted = 0
+        self._total = paths.processable_file_count
+
+    def __getattr__(self, name: str):
+        value = getattr(self._paths, name)
+        if name in _TRACKED_PATH_ATTRS:
+            return self._tracked(value)
+        return value
+
+    def _tracked(self, files):
+        for item in files:
+            yield item
+            self._attempted += 1
+            self._on_file_processed(self._attempted, self._total)
+
 
 class WorkloadLoader:
     """Carrega e normaliza workloads de um namespace."""
@@ -61,7 +106,12 @@ class WorkloadLoader:
     def __init__(self, config: AnalyzerConfig | None = None) -> None:
         self._config = config or AnalyzerConfig.from_env()
 
-    def load_namespace(self, namespace: str) -> NamespaceWorkloadBundle:
+    def load_namespace(
+        self,
+        namespace: str,
+        *,
+        on_file_processed: Callable[[int, int], None] | None = None,
+    ) -> NamespaceWorkloadBundle:
         """Carrega todos os workloads de um namespace."""
         namespace_root = self._config.namespace_path(namespace)
         if not namespace_root.is_dir():
@@ -73,6 +123,8 @@ class WorkloadLoader:
         parse_errors: list[str] = []
         skipped_files: list[str] = []
         processed_files: list[str] = []
+        if on_file_processed is not None:
+            paths = _TrackingNamespacePaths(paths, on_file_processed)
 
         raw_workloads = self._load_workload_controllers(
             paths, parse_errors, processed_files

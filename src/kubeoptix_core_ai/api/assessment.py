@@ -6,10 +6,15 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from kubeoptix_core_ai.api.progress import RunProgress
 from kubeoptix_core_ai.config import (
     ENV_METADATA_DIR,
     ENV_OUTPUT_DIR,
     AnalyzerConfig,
+)
+from kubeoptix_core_ai.discovery.inventory import (
+    NamespaceFileInventory,
+    scan_namespace_files,
 )
 from kubeoptix_core_ai.discovery.scanner import list_namespace_dirs
 from kubeoptix_core_ai.errors import AnalyzerError, ConfigurationError
@@ -115,6 +120,7 @@ class AssessmentService:
         namespaces: list[str],
         *,
         enable_ml: bool | None = None,
+        progress: RunProgress | None = None,
     ) -> AnalysisRunResult:
         ordered = dedupe_namespaces(namespaces)
         self.validate_namespaces(ordered)
@@ -123,11 +129,28 @@ class AssessmentService:
         pipeline = AssessmentPipeline(config)
         self._reports_dir.mkdir(parents=True, exist_ok=True)
 
+        inventories: dict[str, NamespaceFileInventory] = {}
+        if progress is not None:
+            progress.set_running()
+            total_files = 0
+            for namespace in ordered:
+                inventory = scan_namespace_files(config.namespace_path(namespace))
+                inventories[namespace] = inventory
+                total_files += inventory.files_to_process_count
+            progress.set_total(total_files)
+
         reports: list[NamespaceReportResult] = []
 
-        for namespace in ordered:
+        for index, namespace in enumerate(ordered):
+            if progress is not None:
+                progress.begin_namespace(index, namespace)
             try:
-                bundle = pipeline.run(namespace, enable_ml=enable_ml)
+                bundle = pipeline.run(
+                    namespace,
+                    enable_ml=enable_ml,
+                    inventory=inventories.get(namespace),
+                    progress=progress,
+                )
             except AnalyzerError:
                 raise
             except Exception as exc:
@@ -138,9 +161,13 @@ class AssessmentService:
             filename = build_report_filename(namespace)
             report_path = self._reports_dir / filename
             assets_dir = self._reports_dir / report_assets_prefix(namespace)
+            if progress is not None:
+                progress.markdown_started()
             content = MarkdownReportGenerator().generate(bundle, assets_dir=assets_dir)
             content = embed_markdown_images(content, markdown_dir=self._reports_dir)
             report_path.write_bytes(content.encode(REPORT_FILE_ENCODING))
+            if progress is not None:
+                progress.namespace_report_written(str(report_path))
 
             reports.append(
                 NamespaceReportResult(
@@ -151,4 +178,8 @@ class AssessmentService:
                 )
             )
 
-        return AnalysisRunResult(status="SUCCESS", reports=tuple(reports))
+        result = AnalysisRunResult(status="SUCCESS", reports=tuple(reports))
+        if progress is not None:
+            last_report = str(reports[-1].report_path) if reports else None
+            progress.completed(last_report)
+        return result

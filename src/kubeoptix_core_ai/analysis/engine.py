@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from kubeoptix_core_ai.analysis.context import AnalysisContext
@@ -32,6 +33,19 @@ _SEVERITY_ORDER = {
     Severity.LOW: 3,
     Severity.INFO: 4,
 }
+
+_DETERMINISTIC_ANALYZERS: tuple[tuple[str, Callable[..., None]], ...] = (
+    ("CPU", analyze_cpu),
+    ("memória", analyze_memory),
+    ("recursos", analyze_resources),
+    ("QoS", analyze_qos),
+    ("réplicas", analyze_replicas),
+    ("probes", analyze_probes),
+    ("scheduling", analyze_scheduling),
+    ("armazenamento", analyze_storage),
+    ("inventário", analyze_inventory),
+    ("workload-node", analyze_workload_node),
+)
 
 
 def _sort_findings(findings: tuple[Finding, ...]) -> tuple[Finding, ...]:
@@ -93,25 +107,23 @@ class AnalysisEngine:
         nodes: tuple[WorkNode, ...],
         *,
         enable_ml: bool | None = None,
+        on_analysis_step: Callable[[int, int, str], None] | None = None,
     ) -> NamespaceAnalysisResult:
         ctx = AnalysisContext(bundle=bundle, nodes=nodes)
         builder = FindingBuilder()
-
-        analyze_cpu(ctx, builder)
-        analyze_memory(ctx, builder)
-        analyze_resources(ctx, builder)
-        analyze_qos(ctx, builder)
-        analyze_replicas(ctx, builder)
-        analyze_probes(ctx, builder)
-        analyze_scheduling(ctx, builder)
-        analyze_storage(ctx, builder)
-        analyze_inventory(ctx, builder)
-        analyze_workload_node(ctx, builder)
-
         ml_enabled = enable_ml if enable_ml is not None else self._ml_config.enabled
+        step_count = len(_DETERMINISTIC_ANALYZERS) + (1 if ml_enabled else 0)
+
+        for index, (label, analyzer) in enumerate(_DETERMINISTIC_ANALYZERS, start=1):
+            analyzer(ctx, builder)
+            if on_analysis_step is not None:
+                on_analysis_step(index, step_count, label)
+
         if ml_enabled:
             ml_findings, ml_limits = self._ml_engine.analyze(ctx)
             all_findings = builder.findings + ml_findings
+            if on_analysis_step is not None:
+                on_analysis_step(step_count, step_count, "ML")
         else:
             ml_limits = ()
             all_findings = builder.findings
