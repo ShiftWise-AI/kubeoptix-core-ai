@@ -499,56 +499,53 @@ def _runtime_metrics_table(workloads: tuple[Workload, ...]) -> str:
 def _architecture_legend_kubediagrams() -> str:
     return (
         "**Diagrama gerado com [KubeDiagrams](https://github.com/philippemerle/KubeDiagrams)** "
-        "a partir dos manifests YAML do namespace.\n\n"
-        "- **Componentes incluídos** — `Deployment`, `StatefulSet`, `DaemonSet`, "
-        "`DeploymentConfig`, `Pod`, `Service`, `Route`, `HPA`, `VPA`, `PDB`, "
-        "`ConfigMap`, `Secret` e `PVC` (quando presentes no inventário).\n"
-        "- **Agrupamentos** — namespace e labels de aplicação (`app`, `app.kubernetes.io/name`).\n"
-        "- **Ligações (linhas e setas)** — representam dependências e referências declaradas "
-        "nos YAMLs (`selector`, `spec.to`, `ownerReference`, `claim`, etc.).\n"
-        "- **Simplificação** — artefatos padrão e repetidos do OCP (ex.: `kube-root-ca.crt`, "
-        "tokens padrão de service account) são ocultados para reduzir ruído visual.\n\n"
+        "a partir dos manifests YAML do namespace. Relacionamentos são apenas os "
+        "comprováveis no inventário (selector, `spec.to`, volumes, envFrom, scaleTargetRef).\n\n"
+        "**Legenda de cores (agrupamentos):**\n"
+        "- **Workloads** — fundo azul (`Deployment`, `StatefulSet`, `DaemonSet`, "
+        "`DeploymentConfig`, `Job`, `CronJob`, HPA/VPA/PDB).\n"
+        "- **Pods** — fundo azul-claro; pods equivalentes aparecem **uma vez**, "
+        "com o rótulo `nome (N replicas)`.\n"
+        "- **Networking** — fundo verde (`Service`, `Route`, `Ingress`, `NetworkPolicy`); "
+        "Services exibem a porta (`nome:8000`).\n"
+        "- **Storage** — fundo âmbar (`PVC`, `PV`, `StorageClass`).\n"
+        "- **Configuration** — fundo cinza (`ConfigMap`, `Secret`, `ServiceAccount`).\n\n"
+        "**Leitura sugerida:** à esquerda Workloads → Configuration → Storage; "
+        "à direita Networking.\n\n"
+        "**Tipos de aresta:** `selector` (tracejada), referência direta (sólida), "
+        "`controller`/`owner` (pontilhada).\n\n"
+        "> Artefatos de Build (`BuildConfig`, `Build`, `ImageStream`, pods `*-build`), "
+        "artefatos padrão de plataforma (SA `default`/`builder`/`deployer`, "
+        "ConfigMaps `*-ca`, tokens de SA) e recursos derivados "
+        "(Endpoints, Leases, ReplicaSets intermediários) são omitidos para legibilidade.\n\n"
         "> Ajustes por ambiente: `KUBEOPTIX_DIAGRAM_INCLUDE_COMMON_OCP`, "
-        "`KUBEOPTIX_DIAGRAM_INCLUDE_PATH_REGEX` e `KUBEOPTIX_DIAGRAM_EXCLUDE_PATH_REGEX`.\n\n"
-        "> O diagrama mostra o conteúdo do namespace com foco em arquitetura e dependências.\n"
+        "`KUBEOPTIX_DIAGRAM_INCLUDE_PATH_REGEX` e `KUBEOPTIX_DIAGRAM_EXCLUDE_PATH_REGEX`.\n"
     )
 
 
 def _architecture_legend_custom() -> str:
-    return (
-        "**Legenda dos grupos:**\n\n"
-        "- **Namespace atual** — Pods (workloads), Services e Routes do namespace.\n"
-        "- **Outros namespaces** — dependências com namespace explícito nos YAMLs.\n"
-        "- **Fora do cluster** — clientes HTTP(S), bancos de dados e destinos "
-        "`ExternalName` evidenciados nos YAMLs.\n\n"
-        "**Tipos de aresta:** rótulos indicam a relação comprovada (ex.: `selector`, "
-        "`spec.to`, `credenciais DB`, `env`) e o escopo (`interno`, "
-        "`entre namespaces`, `externo`).\n\n"
-        "> Contagem de instâncias nos Pods: réplicas desejadas/prontas do Deployment "
-        "(ou pods coletados no inventário, quando aplicável).\n\n"
-        "> Componentes considerados na arquitetura: `Deployment`, `StatefulSet`, "
-        "`DaemonSet`, `DeploymentConfig`, `Pod`, `Service`, `Route`, `HPA`, `VPA`, "
-        "`PDB`, `ConfigMap`, `Secret` e `PVC` (quando presentes no inventário YAML).\n"
-    )
+    return _architecture_legend_kubediagrams()
 
 
 def _architecture_manifest_breakdown(manifests: tuple[Path, ...]) -> str:
     counts = {
-        "routes": 0,
-        "services": 0,
         "workloads": 0,
         "pods": 0,
+        "networking": 0,
+        "storage": 0,
+        "config": 0,
         "autoscalers": 0,
-        "configmaps": 0,
-        "secrets": 0,
-        "pvcs": 0,
     }
     for manifest in manifests:
         text = str(manifest).lower()
         if "/routes/" in text or "/routes.route.openshift.io/" in text:
-            counts["routes"] += 1
+            counts["networking"] += 1
         elif "/services/" in text:
-            counts["services"] += 1
+            counts["networking"] += 1
+        elif "/ingresses.networking.k8s.io/" in text or "/ingresses/" in text:
+            counts["networking"] += 1
+        elif "/networkpolicies" in text:
+            counts["networking"] += 1
         elif (
             "/deployments/" in text
             or "/deployments.apps/" in text
@@ -558,6 +555,12 @@ def _architecture_manifest_breakdown(manifests: tuple[Path, ...]) -> str:
             or "/daemonsets.apps/" in text
             or "/deploymentconfigs/" in text
             or "/deploymentconfigs.apps.openshift.io/" in text
+            or "/jobs/" in text
+            or "/jobs.batch/" in text
+            or "/cronjobs/" in text
+            or "/cronjobs.batch/" in text
+            or "/replicationcontrollers/" in text
+            or "/replicasets/" in text
         ):
             counts["workloads"] += 1
         elif "/pods/" in text:
@@ -571,17 +574,20 @@ def _architecture_manifest_breakdown(manifests: tuple[Path, ...]) -> str:
             or "/pdb/" in text
         ):
             counts["autoscalers"] += 1
-        elif "/configmaps/" in text:
-            counts["configmaps"] += 1
-        elif "/secrets/" in text:
-            counts["secrets"] += 1
-        elif "/persistentvolumeclaims/" in text or "/pvc/" in text:
-            counts["pvcs"] += 1
+        elif "/configmaps/" in text or "/secrets/" in text or "/serviceaccounts/" in text:
+            counts["config"] += 1
+        elif (
+            "/persistentvolumeclaims/" in text
+            or "/pvc/" in text
+            or "/persistentvolumes/" in text
+            or "/storageclasses" in text
+        ):
+            counts["storage"] += 1
     return (
-        f"Routes: {counts['routes']} | Services: {counts['services']} | "
         f"Workloads: {counts['workloads']} | Pods: {counts['pods']} | "
-        f"Autoscalers/PDB: {counts['autoscalers']} | ConfigMaps: {counts['configmaps']} | "
-        f"Secrets: {counts['secrets']} | PVCs: {counts['pvcs']}"
+        f"Networking: {counts['networking']} | Storage: {counts['storage']} | "
+        f"Config: {counts['config']} | "
+        f"Autoscalers/PDB: {counts['autoscalers']}"
     )
 
 

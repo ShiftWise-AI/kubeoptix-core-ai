@@ -1,56 +1,292 @@
-# Configuração visual dos recursos de inventário para KubeDiagrams.
-# Cada tipo principal recebe ícone dedicado para facilitar leitura humana.
+# Configuração visual KubeDiagrams (formato nativo 0.8.0).
+# Agrupa por categoria de inventário (não por labels Helm/app) e define
+# recursos OpenShift com relações extraídas apenas dos campos YAML.
 
-resources:
-  - kind: Deployment
-    apiGroup: apps
-    versions: [v1]
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/deploy-128.png
-  - kind: StatefulSet
-    apiGroup: apps
-    versions: [v1]
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/sts-128.png
-  - kind: DaemonSet
-    apiGroup: apps
-    versions: [v1]
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/ds-128.png
-  - kind: Pod
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/pod-128.png
-  - kind: Service
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/svc-128.png
-  - kind: Route
-    apiGroup: route.openshift.io
-    versions: [v1]
-    icon: https://raw.githubusercontent.com/philippemerle/KubeDiagrams/main/examples/deathstarbench/icons/openshift-route.png
-  - kind: HorizontalPodAutoscaler
-    apiGroup: autoscaling
-    versions: [v1, v2, v2beta2]
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/hpa-128.png
-  - kind: VerticalPodAutoscaler
-    apiGroup: autoscaling.k8s.io
-    versions: [v1]
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/vpa-128.png
-  - kind: PodDisruptionBudget
-    apiGroup: policy
-    versions: [v1]
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/pdb-128.png
-  - kind: ConfigMap
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/cm-128.png
-  - kind: Secret
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/secret-128.png
-  - kind: PersistentVolumeClaim
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/pvc-128.png
-  - kind: DeploymentConfig
-    apiGroup: apps.openshift.io
-    versions: [v1]
-    icon: https://raw.githubusercontent.com/kubernetes/community/master/icons/png/resources/labeled/deploy-128.png
+edges:
+  REFERENCE:
+    color: "#1F4E79"
+    style: solid
+  REFERENCE-UP:
+    color: "#1F4E79"
+    style: solid
+    direction: up
+  SELECTOR:
+    color: "#1D8348"
+    style: dashed
+  SELECTOR-UP:
+    color: "#1D8348"
+    style: dashed
+    direction: up
+  OWNER:
+    color: "#5D6D7E"
+    style: dotted
+  CONTROLLED_BY:
+    xlabel: controller
+    color: "#5D6D7E"
+    style: dotted
+  COMMUNICATION:
+    color: "#A04000"
+    style: solid
 
 clusters:
-  - labelKey: app.kubernetes.io/name
-    title: "K8s Application: {value}"
-    backgroundColor: "#ECE8F6"
+  - label: app.kubernetes.io/instance
+    show: false
+  - label: release
+    show: false
+  - label: helm.sh/chart
+    show: false
+  - label: chart
+    show: false
+  - label: app.kubernetes.io/name
+    show: false
+  - label: app
+    show: false
+  - label: tier
+    show: false
+  - label: app.kubernetes.io/component
+    show: false
+  - label: component
+    show: false
+  - label: service
+    show: false
+  - label: app.kubernetes.io/part-of
+    show: false
+  - label: kubeoptix.io/cat-workloads
+    title: "{}"
     recommended: true
-  - labelKey: app
-    title: "Application: {value}"
-    backgroundColor: "#ECE8F6"
-    recommended: false
+    graph_attr:
+      bgcolor: "#D4E6F1"
+      pencolor: "#1F4E79"
+      style: rounded
+      fontcolor: "#1F4E79"
+  - label: kubeoptix.io/cat-pods
+    title: "{}"
+    recommended: true
+    graph_attr:
+      bgcolor: "#AED6F1"
+      pencolor: "#1A5276"
+      style: rounded
+      fontcolor: "#1A5276"
+  - label: kubeoptix.io/cat-config
+    title: "{}"
+    recommended: true
+    graph_attr:
+      bgcolor: "#E5E8E8"
+      pencolor: "#566573"
+      style: rounded
+      fontcolor: "#566573"
+  - label: kubeoptix.io/cat-storage
+    title: "{}"
+    recommended: true
+    graph_attr:
+      bgcolor: "#FDEBD0"
+      pencolor: "#9A7D0A"
+      style: rounded
+      fontcolor: "#9A7D0A"
+  - label: kubeoptix.io/cat-networking
+    title: "{}"
+    recommended: true
+    graph_attr:
+      bgcolor: "#D5F5E3"
+      pencolor: "#196F3D"
+      style: rounded
+      fontcolor: "#196F3D"
+
+nodes:
+  Endpoints/v1:
+    show: false
+  EndpointSlice/discovery.k8s.io/v1:
+    show: false
+  Lease/coordination.k8s.io/v1:
+    show: false
+  ControllerRevision/apps/v1:
+    show: false
+  Deployment/apps/v1:
+    scope: Namespaced
+    diagram_node_classname: diagrams.k8s.compute.Deploy
+    edges: |
+      edges.add_owned_resources()
+      edges.add_service_account("spec.template.spec")
+      edges.add_all_volume_resources("spec.template.spec.volumes")
+      edges.add_containers_env_value_from_and_env_from("spec.template.spec.containers")
+      edges.add_containers_env_value_from_and_env_from("spec.template.spec.initContainers")
+      edges.add_containers_env_value_from_and_env_from("spec.template.spec.ephemeralContainers")
+      edges.add_wait_for_services("spec.template.spec.initContainers")
+      edges.add_networks("spec.template.metadata.annotations")
+      edges.add_priority_class("spec.template.spec.priorityClassName")
+      edges.add_edge_to(
+          "spec.template.spec.runtimeClassName",
+          ".",
+          None,
+          "RuntimeClass",
+          "node.k8s.io/v1",
+          "REFERENCE",
+      )
+      match_labels = query_path(resource, "spec.selector.matchLabels")
+      if isinstance(match_labels, dict):
+          edges.add_all_resources_matching_labels(
+              "Pod",
+              "spec.selector.matchLabels",
+              match_labels=match_labels,
+              edge_kind="SELECTOR",
+          )
+      for idx, edge in enumerate(edges):
+          if isinstance(edge, (list, tuple)) and len(edge) == 2:
+              rid = str(edge[0])
+              if "/ServiceAccount/" in rid or "/ConfigMap/" in rid or "/Secret/" in rid:
+                  edges[idx] = [edge[0], "REFERENCE-UP"]
+  StatefulSet/apps/v1:
+    scope: Namespaced
+    diagram_node_classname: diagrams.k8s.compute.STS
+    edges: |
+      edges.add_owned_resources()
+      edges.add_service_account("spec.template.spec")
+      edges.add_all_volume_resources("spec.template.spec.volumes")
+      edges.add_containers_env_value_from_and_env_from("spec.template.spec.containers")
+      edges.add_containers_env_value_from_and_env_from("spec.template.spec.initContainers")
+      edges.add_containers_env_value_from_and_env_from("spec.template.spec.ephemeralContainers")
+      edges.add_wait_for_services("spec.template.spec.initContainers")
+      edges.add_networks("spec.template.metadata.annotations")
+      edges.add_priority_class("spec.template.spec.priorityClassName")
+      edges.add_volume_claim_templates("spec.volumeClaimTemplates")
+      edges.add_service("spec.serviceName")
+      edges.add_edge_to(
+          "spec.template.spec.runtimeClassName",
+          ".",
+          None,
+          "RuntimeClass",
+          "node.k8s.io/v1",
+          "REFERENCE",
+      )
+      match_labels = query_path(resource, "spec.selector.matchLabels")
+      if isinstance(match_labels, dict):
+          edges.add_all_resources_matching_labels(
+              "Pod",
+              "spec.selector.matchLabels",
+              match_labels=match_labels,
+              edge_kind="SELECTOR",
+          )
+      for idx, edge in enumerate(edges):
+          if isinstance(edge, (list, tuple)) and len(edge) == 2:
+              rid = str(edge[0])
+              if "/ServiceAccount/" in rid or "/ConfigMap/" in rid or "/Secret/" in rid:
+                  edges[idx] = [edge[0], "REFERENCE-UP"]
+  DaemonSet/apps/v1:
+    scope: Namespaced
+    diagram_node_classname: diagrams.k8s.compute.DS
+    edges: |
+      edges.add_owned_resources()
+      edges.add_service_account("spec.template.spec")
+      edges.add_all_volume_resources("spec.template.spec.volumes")
+      edges.add_containers_env_value_from_and_env_from("spec.template.spec.containers")
+      edges.add_containers_env_value_from_and_env_from("spec.template.spec.initContainers")
+      edges.add_containers_env_value_from_and_env_from("spec.template.spec.ephemeralContainers")
+      edges.add_wait_for_services("spec.template.spec.initContainers")
+      edges.add_networks("spec.template.metadata.annotations")
+      edges.add_priority_class("spec.template.spec.priorityClassName")
+      match_labels = query_path(resource, "spec.selector.matchLabels")
+      if isinstance(match_labels, dict):
+          edges.add_all_resources_matching_labels(
+              "Pod",
+              "spec.selector.matchLabels",
+              match_labels=match_labels,
+              edge_kind="SELECTOR",
+          )
+      for idx, edge in enumerate(edges):
+          if isinstance(edge, (list, tuple)) and len(edge) == 2:
+              rid = str(edge[0])
+              if "/ServiceAccount/" in rid or "/ConfigMap/" in rid or "/Secret/" in rid:
+                  edges[idx] = [edge[0], "REFERENCE-UP"]
+  ReplicaSet/apps/v1:
+    scope: Namespaced
+    diagram_node_classname: diagrams.k8s.compute.RS
+    edges: |
+      edges.add_owned_resources()
+      match_labels = query_path(resource, "spec.selector.matchLabels")
+      if isinstance(match_labels, dict):
+          edges.add_all_resources_matching_labels(
+              "Pod",
+              "spec.selector.matchLabels",
+              match_labels=match_labels,
+              edge_kind="SELECTOR",
+          )
+      for idx, edge in enumerate(edges):
+          if isinstance(edge, (list, tuple)) and len(edge) == 2:
+              rid = str(edge[0])
+              if "/ServiceAccount/" in rid or "/ConfigMap/" in rid or "/Secret/" in rid:
+                  edges[idx] = [edge[0], "REFERENCE-UP"]
+  ReplicationController/v1:
+    scope: Namespaced
+    diagram_node_classname: diagrams.k8s.compute.RS
+    edges: |
+      edges.add_owned_resources()
+      selector = query_path(resource, "spec.selector")
+      if isinstance(selector, dict):
+          edges.add_all_resources_matching_labels(
+              "Pod",
+              "spec.selector",
+              match_labels=selector,
+              edge_kind="SELECTOR",
+          )
+  DeploymentConfig/apps.openshift.io/v1:
+    scope: Namespaced
+    diagram_node_classname: diagrams.k8s.compute.Deploy
+    edges: |
+      edges.add_owned_resources()
+      edges.add_service_account("spec.template.spec")
+      edges.add_all_volume_resources("spec.template.spec.volumes")
+      edges.add_containers_env_value_from_and_env_from("spec.template.spec.containers")
+      edges.add_containers_env_value_from_and_env_from("spec.template.spec.initContainers")
+      selector = query_path(resource, "spec.selector.matchLabels")
+      if selector is None:
+          selector = query_path(resource, "spec.selector")
+      if isinstance(selector, dict) and "matchLabels" not in selector:
+          edges.add_all_resources_matching_labels(
+              "Pod",
+              "spec.selector",
+              match_labels=selector,
+              edge_kind="SELECTOR",
+          )
+      elif isinstance(selector, dict):
+          edges.add_all_resources_matching_labels(
+              "Pod",
+              "spec.selector.matchLabels",
+              match_labels=selector,
+              edge_kind="SELECTOR",
+          )
+      for idx, edge in enumerate(edges):
+          if isinstance(edge, (list, tuple)) and len(edge) == 2:
+              rid = str(edge[0])
+              if "/ServiceAccount/" in rid or "/ConfigMap/" in rid or "/Secret/" in rid:
+                  edges[idx] = [edge[0], "REFERENCE-UP"]
+  Route/route.openshift.io/v1:
+    scope: Namespaced
+    diagram_node_classname: diagrams.k8s.network.Ing
+    edges: |
+      edges.add_service("spec.to.name")
+      for idx, backend in enumerate(query_path(resource, "spec.alternateBackends", []) or []):
+          if isinstance(backend, dict) and backend.get("name"):
+              edges.add_service(f"spec.alternateBackends[{idx}].name")
+  Pod/v1:
+    scope: Namespaced
+    diagram_node_classname: diagrams.k8s.compute.Pod
+    edges: |
+      edges.add_service_account("spec")
+      edges.add_all_volume_resources("spec.volumes")
+      edges.add_containers_env_value_from_and_env_from("spec.containers")
+      edges.add_containers_env_value_from_and_env_from("spec.initContainers")
+      edges.add_containers_env_value_from_and_env_from("spec.ephemeralContainers")
+      edges.add_wait_for_services("spec.initContainers")
+      edges.add_networks("metadata.annotations")
+      edges.add_priority_class("spec.priorityClassName")
+      for idx, edge in enumerate(edges):
+          if isinstance(edge, (list, tuple)) and len(edge) == 2:
+              rid = str(edge[0])
+              if "/ServiceAccount/" in rid or "/ConfigMap/" in rid or "/Secret/" in rid:
+                  edges[idx] = [edge[0], "REFERENCE-UP"]
+  BuildConfig/build.openshift.io/v1:
+    show: false
+  Build/build.openshift.io/v1:
+    show: false
+  ImageStream/image.openshift.io/v1:
+    show: false
