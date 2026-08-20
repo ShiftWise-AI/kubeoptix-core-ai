@@ -79,6 +79,25 @@ class NamespacePaths:
             or "deployments.apps" in f.parts
         )
 
+    @property
+    def processable_file_count(self) -> int:
+        """Quantidade de arquivos que o loader de workloads itera."""
+        return (
+            len(self.workload_files)
+            + len(self.pod_files)
+            + len(self.pod_metrics_files)
+            + len(self.hpa_files)
+            + len(self.vpa_files)
+            + len(self.pdb_files)
+            + len(self.pvc_files)
+            + len(self.service_files)
+            + len(self.route_files)
+            + len(self.configmap_files)
+            + len(self.csv_files)
+            + len(self.packagemanifest_files)
+            + len(self.pod_log_files)
+        )
+
 
 def _collect_named_yaml_files(
     namespace_root: Path,

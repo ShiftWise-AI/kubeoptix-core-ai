@@ -88,6 +88,24 @@ def test_workload_loader_integrates_placements_and_metrics(
     assert workload.hpa.metrics == ["cpu:70%"]
 
 
+def test_workload_loader_reports_file_progress(
+    mini_namespace_tree: Path,
+) -> None:
+    config = AnalyzerConfig(workloads_base=mini_namespace_tree)
+    ticks: list[tuple[int, int]] = []
+
+    WorkloadLoader(config).load_namespace(
+        EXAMPLE_NAMESPACE,
+        on_file_processed=lambda processed, total: ticks.append((processed, total)),
+    )
+
+    assert ticks
+    assert ticks[0][0] == 1
+    assert ticks[-1][0] == ticks[-1][1]
+    assert all(total == ticks[0][1] for _, total in ticks)
+    assert all(processed <= total for processed, total in ticks)
+
+
 def test_worknode_loader(tmp_path: Path) -> None:
     nodes_dir = tmp_path / "worknodes"
     nodes_dir.mkdir()

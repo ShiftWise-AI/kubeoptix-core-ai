@@ -13,6 +13,7 @@ from kubeoptix_core_ai.api.assessment import (
     build_report_filename,
     dedupe_namespaces,
 )
+from kubeoptix_core_ai.api.progress import ExecutionStore, RunProgress
 from kubeoptix_core_ai.errors import ConfigurationError
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -103,6 +104,32 @@ def test_assessment_service_run_single_namespace(
     assert report.finding_count > 0
     assert report.report_path.name == f"{EXAMPLE_NAMESPACE}.md"
     assert report.report_path.read_text(encoding="utf-8").startswith("---")
+
+
+def test_assessment_service_run_reports_progress_until_markdown_exists(
+    analysis_tree: Path,
+    tmp_path: Path,
+) -> None:
+    reports_dir = tmp_path / "reports"
+    service = AssessmentService(
+        assessment_dir=analysis_tree,
+        reports_dir=reports_dir,
+    )
+    store = ExecutionStore()
+    snapshot = store.create([EXAMPLE_NAMESPACE])
+    progress = RunProgress(store, snapshot.execution_id, 1)
+
+    result = service.run([EXAMPLE_NAMESPACE], enable_ml=False, progress=progress)
+
+    assert result.status == "SUCCESS"
+    done = store.get(snapshot.execution_id)
+    assert done is not None
+    assert done.status.value == "completed"
+    assert done.progress == 100
+    assert done.report is not None
+    assert Path(done.report).is_file()
+    assert done.processed >= 1
+    assert done.total >= done.processed
 
 
 def test_assessment_service_run_multiple_namespaces(

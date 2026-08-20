@@ -261,7 +261,12 @@ def test_analysis_returns_500_on_internal_failure(
     assessment_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def _fail_run(self: AssessmentService, namespaces: list[str], enable_ml: bool | None = None):
+    def _fail_run(
+        self: AssessmentService,
+        namespaces: list[str],
+        enable_ml: bool | None = None,
+        progress=None,
+    ):
         raise AnalyzerError("Falha simulada")
 
     monkeypatch.setattr(AssessmentService, "run", _fail_run)

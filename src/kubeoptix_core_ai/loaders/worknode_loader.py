@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from kubeoptix_core_ai.config import AnalyzerConfig
@@ -19,7 +20,12 @@ class WorknodeLoader:
     def __init__(self, config: AnalyzerConfig | None = None) -> None:
         self._config = config or AnalyzerConfig.from_env()
 
-    def load(self, worknodes_path: Path | None = None) -> WorkNodeBundle:
+    def load(
+        self,
+        worknodes_path: Path | None = None,
+        *,
+        on_file_processed: Callable[[int, int], None] | None = None,
+    ) -> WorkNodeBundle:
         """Carrega todos os worknodes do diretório configurado."""
         path = worknodes_path or self._config.worknodes_path
         if not path.is_dir():
@@ -27,14 +33,18 @@ class WorknodeLoader:
 
         nodes: list[WorkNode] = []
         parse_errors: list[str] = []
+        node_files = sorted(path.glob("*.yaml"))
+        total = len(node_files)
 
-        for node_file in sorted(path.glob("*.yaml")):
+        for index, node_file in enumerate(node_files, start=1):
             try:
                 nodes.append(parse_node(node_file))
             except ParseError as exc:
                 msg = str(exc)
                 parse_errors.append(msg)
                 logger.warning("Falha ao parsear Node %s: %s", node_file, msg)
+            if on_file_processed is not None:
+                on_file_processed(index, total)
 
         return WorkNodeBundle(
             nodes=tuple(sorted(nodes, key=lambda n: n.name)),
