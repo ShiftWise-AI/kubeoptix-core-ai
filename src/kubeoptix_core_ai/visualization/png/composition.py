@@ -6,7 +6,7 @@ from pathlib import Path
 
 from kubeoptix_core_ai.visualization.chart_theme import CHART_COLORS, format_chart_percent, format_chart_value
 from kubeoptix_core_ai.visualization.models import CompositionDataset
-from kubeoptix_core_ai.visualization.png._mpl import matplotlib  # noqa: F401
+from kubeoptix_core_ai.visualization.png._mpl import matplotlib, save_figure  # noqa: F401
 
 import matplotlib.pyplot as plt
 
@@ -17,7 +17,7 @@ def _empty_chart(output_path: Path, title: str) -> None:
     ax.text(0.5, 0.5, "Sem dados para exibir", ha="center", va="center", fontsize=12, color="#666666")
     ax.set_title(title, fontsize=12, fontweight="bold")
     fig.tight_layout()
-    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    save_figure(fig, output_path)
     plt.close(fig)
 
 
@@ -59,5 +59,5 @@ def render_composition_png(dataset: CompositionDataset, output_path: Path) -> No
     ax.text(0, 0, format_chart_value(total), ha="center", va="center", fontsize=14, fontweight="bold")
     ax.set_title(dataset.title, fontsize=12, fontweight="bold", pad=12)
     fig.tight_layout()
-    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    save_figure(fig, output_path)
     plt.close(fig)

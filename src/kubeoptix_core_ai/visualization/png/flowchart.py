@@ -9,7 +9,7 @@ from pathlib import Path
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Polygon
 
 from kubeoptix_core_ai.visualization.models import DiagramEdge, DiagramNode, FlowchartDataset
-from kubeoptix_core_ai.visualization.png._mpl import matplotlib  # noqa: F401
+from kubeoptix_core_ai.visualization.png._mpl import matplotlib, save_figure  # noqa: F401
 
 import matplotlib.pyplot as plt
 
@@ -238,7 +238,7 @@ def _empty_chart(output_path: Path, title: str) -> None:
     ax.text(0.5, 0.5, "Sem dados para exibir", ha="center", va="center", fontsize=12, color="#666666")
     ax.set_title(title, fontsize=12, fontweight="bold")
     fig.tight_layout()
-    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    save_figure(fig, output_path)
     plt.close(fig)
 
 
@@ -307,5 +307,5 @@ def render_flowchart_png(dataset: FlowchartDataset, output_path: Path) -> None:
     ax.autoscale()
     ax.margins(0.15)
     fig.tight_layout()
-    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    save_figure(fig, output_path)
     plt.close(fig)

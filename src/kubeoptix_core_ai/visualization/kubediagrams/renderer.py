@@ -17,6 +17,7 @@ from kubeoptix_core_ai.normalize.ownership import infer_deployment_from_replicas
 from kubeoptix_core_ai.visualization.kubediagrams.config import bundled_config_path
 from kubeoptix_core_ai.visualization.kubediagrams.yamlutil import load_diagram_documents
 from kubeoptix_core_ai.visualization.png.assets import safe_asset_filename
+from kubeoptix_core_ai.visualization.png.postprocess import optimize_png_canvas
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,12 @@ def _ensure_root_layout_attrs(dot_source: str) -> str:
         additions.append("compound=true")
     if "newrank=" not in body:
         additions.append("newrank=true")
+    if "margin=" not in body:
+        additions.append("margin=0")
+    if "pad=" not in body:
+        additions.append("pad=0.05")
+    if "dpi=" not in body:
+        additions.append("dpi=150")
     if not additions:
         return dot_source
     return (
@@ -1076,6 +1083,7 @@ class KubeDiagramsRenderer:
                 (getattr(result, "stderr", None) or "")[:1000],
             )
             return False
+        optimize_png_canvas(output_path)
         return True
 
     def _render_dot_to_png(self, dot_source: str, output_path: Path) -> bool:
@@ -1106,6 +1114,7 @@ class KubeDiagramsRenderer:
                     pass
             if result is not None and result.returncode == 0:
                 if output_path.is_file() and output_path.stat().st_size > 0:
+                    optimize_png_canvas(output_path)
                     return True
         runtime = find_container_runtime()
         if runtime is not None:
@@ -1278,4 +1287,5 @@ class KubeDiagramsRenderer:
             self._set_error(f"arquivo PNG não produzido ou vazio: {output_path}")
             return False
 
+        optimize_png_canvas(output_path)
         return True
