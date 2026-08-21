@@ -7,6 +7,11 @@ from pathlib import Path
 from kubeoptix_core_ai.visualization.chart_theme import CHART_COLORS, truncate_chart_label
 from kubeoptix_core_ai.visualization.models import ChartDataset, ChartPoint, ChartSeries
 from kubeoptix_core_ai.visualization.png._mpl import matplotlib, save_figure  # noqa: F401
+from kubeoptix_core_ai.visualization.png.export_config import (
+    EMPTY_CHART_FIGSIZE,
+    NUMERIC_FIGSIZE_HEIGHT,
+    numeric_figsize_width,
+)
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -44,7 +49,7 @@ def _point_for(series: ChartSeries, label: str) -> ChartPoint | None:
 
 
 def _empty_chart(output_path: Path, title: str) -> None:
-    fig, ax = plt.subplots(figsize=(8, 4))
+    fig, ax = plt.subplots(figsize=EMPTY_CHART_FIGSIZE)
     ax.axis("off")
     ax.text(0.5, 0.5, "Sem dados para exibir", ha="center", va="center", fontsize=12, color="#666666")
     ax.set_title(title, fontsize=12, fontweight="bold")
@@ -64,8 +69,8 @@ def render_numeric_png(dataset: ChartDataset, output_path: Path) -> None:
     labels = list(dataset.x_labels)
     x = np.arange(len(labels))
     y_max = _compute_y_max(dataset)
-    fig_width = max(8, min(16, 4 + len(labels) * 0.8))
-    fig, ax = plt.subplots(figsize=(fig_width, 5))
+    fig_width = numeric_figsize_width(len(labels))
+    fig, ax = plt.subplots(figsize=(fig_width, NUMERIC_FIGSIZE_HEIGHT))
 
     if bars:
         if len(bars) == 1:

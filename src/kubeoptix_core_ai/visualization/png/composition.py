@@ -7,12 +7,13 @@ from pathlib import Path
 from kubeoptix_core_ai.visualization.chart_theme import CHART_COLORS, format_chart_percent, format_chart_value
 from kubeoptix_core_ai.visualization.models import CompositionDataset
 from kubeoptix_core_ai.visualization.png._mpl import matplotlib, save_figure  # noqa: F401
+from kubeoptix_core_ai.visualization.png.export_config import COMPOSITION_FIGSIZE, EMPTY_CHART_FIGSIZE
 
 import matplotlib.pyplot as plt
 
 
 def _empty_chart(output_path: Path, title: str) -> None:
-    fig, ax = plt.subplots(figsize=(6, 4))
+    fig, ax = plt.subplots(figsize=EMPTY_CHART_FIGSIZE)
     ax.axis("off")
     ax.text(0.5, 0.5, "Sem dados para exibir", ha="center", va="center", fontsize=12, color="#666666")
     ax.set_title(title, fontsize=12, fontweight="bold")
@@ -40,7 +41,7 @@ def render_composition_png(dataset: CompositionDataset, output_path: Path) -> No
         for label, value in zip(labels, values, strict=True)
     ]
 
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, ax = plt.subplots(figsize=COMPOSITION_FIGSIZE)
     wedges, *_ = ax.pie(
         values,
         labels=None,

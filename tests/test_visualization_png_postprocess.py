@@ -14,7 +14,15 @@ from kubeoptix_core_ai.visualization.models import (
     PieSlice,
 )
 from kubeoptix_core_ai.visualization.png import PngRenderer
-from kubeoptix_core_ai.visualization.png.postprocess import _content_bbox, optimize_png_canvas
+from kubeoptix_core_ai.visualization.png.export_config import (
+    REPORT_CHART_MAX_HEIGHT_PX,
+    REPORT_CHART_MAX_WIDTH_PX,
+)
+from kubeoptix_core_ai.visualization.png.postprocess import (
+    _content_bbox,
+    cap_png_dimensions,
+    optimize_png_canvas,
+)
 
 
 def _fill_ratio(path: Path) -> float:
@@ -57,7 +65,24 @@ def test_optimize_png_canvas_skips_already_tight_canvas(tmp_path: Path) -> None:
     assert before == after
 
 
-def test_rendered_charts_keep_dimensions_and_improve_fill(tmp_path: Path) -> None:
+def test_cap_png_dimensions_downscales_large_images(tmp_path: Path) -> None:
+    path = tmp_path / "large.png"
+    Image.new("RGB", (1600, 900), (10, 10, 10)).save(path)
+
+    changed = cap_png_dimensions(
+        path,
+        max_width=REPORT_CHART_MAX_WIDTH_PX,
+        max_height=REPORT_CHART_MAX_HEIGHT_PX,
+    )
+
+    with Image.open(path) as image:
+        width, height = image.size
+    assert changed is True
+    assert width <= REPORT_CHART_MAX_WIDTH_PX
+    assert height <= REPORT_CHART_MAX_HEIGHT_PX
+
+
+def test_rendered_charts_respect_report_size_limits(tmp_path: Path) -> None:
     numeric = ChartDataset(
         title="CPU request",
         question="Test",
@@ -90,6 +115,7 @@ def test_rendered_charts_keep_dimensions_and_improve_fill(tmp_path: Path) -> Non
         path = tmp_path / name
         with Image.open(path) as image:
             width, height = image.size
-            assert width > 0 and height > 0
+            assert width <= REPORT_CHART_MAX_WIDTH_PX
+            assert height <= REPORT_CHART_MAX_HEIGHT_PX
             fill_ratio = _fill_ratio(path)
             assert fill_ratio >= 0.35, f"{name} fill ratio too low: {fill_ratio:.2f}"

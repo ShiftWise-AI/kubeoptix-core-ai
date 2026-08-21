@@ -4,9 +4,17 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 from PIL import Image, UnidentifiedImageError
+
+from kubeoptix_core_ai.visualization.png.export_config import (
+    REPORT_CHART_MAX_HEIGHT_PX,
+    REPORT_CHART_MAX_WIDTH_PX,
+    REPORT_DIAGRAM_MAX_HEIGHT_PX,
+    REPORT_DIAGRAM_MAX_WIDTH_PX,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -124,3 +132,51 @@ def optimize_png_canvas(
     except (OSError, UnidentifiedImageError, ValueError) as exc:
         logger.debug("Ignorando pós-processamento de PNG inválido %s: %s", path, exc)
         return False
+
+
+def cap_png_dimensions(
+    path: Path,
+    *,
+    max_width: int,
+    max_height: int,
+) -> bool:
+    """Reduz proporcionalmente PNGs acima do limite (sem ampliar imagens menores)."""
+    if not path.is_file() or path.stat().st_size <= 0:
+        return False
+
+    try:
+        with Image.open(path) as source:
+            orig_w, orig_h = source.size
+            if orig_w <= max_width and orig_h <= max_height:
+                return False
+
+            scale = min(max_width / orig_w, max_height / orig_h)
+            new_w = max(1, int(round(orig_w * scale)))
+            new_h = max(1, int(round(orig_h * scale)))
+            resized = source.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            resized.save(path, format="PNG", optimize=True)
+            return True
+    except (OSError, UnidentifiedImageError, ValueError) as exc:
+        logger.debug("Ignorando redimensionamento de PNG inválido %s: %s", path, exc)
+        return False
+
+
+def finalize_report_png(
+    path: Path,
+    *,
+    profile: Literal["chart", "diagram"] = "chart",
+) -> None:
+    """Normaliza margens e aplica limites de dimensão para edição Markdown/PDF."""
+    optimize_png_canvas(path)
+    if profile == "diagram":
+        cap_png_dimensions(
+            path,
+            max_width=REPORT_DIAGRAM_MAX_WIDTH_PX,
+            max_height=REPORT_DIAGRAM_MAX_HEIGHT_PX,
+        )
+        return
+    cap_png_dimensions(
+        path,
+        max_width=REPORT_CHART_MAX_WIDTH_PX,
+        max_height=REPORT_CHART_MAX_HEIGHT_PX,
+    )
