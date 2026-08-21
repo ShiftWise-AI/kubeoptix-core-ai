@@ -43,6 +43,7 @@ from kubeoptix_core_ai.visualization.datasets.architecture import (
 from kubeoptix_core_ai.visualization.diagram_renderer import DiagramRenderer
 from kubeoptix_core_ai.visualization.kubediagrams.mapping import manifests_for_namespace_architecture
 from kubeoptix_core_ai.visualization.markdown import (
+    _markdown_architecture_image,
     _markdown_image,
     embed_markdown_images,
     render_section_visualizations,
@@ -671,7 +672,7 @@ def _namespace_architecture_section(
         if len(yaml_sources) > 12:
             lines.append(f"- _… e mais {len(yaml_sources) - 12} arquivo(s)_")
         lines.append("")
-    lines.append(_markdown_image("Arquitetura do namespace", image_path))
+    lines.append(_markdown_architecture_image("Arquitetura do namespace", image_path))
     lines.append("")
     return "\n".join(lines)
 

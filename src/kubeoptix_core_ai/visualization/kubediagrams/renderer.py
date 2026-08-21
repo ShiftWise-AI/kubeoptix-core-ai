@@ -17,7 +17,13 @@ from kubeoptix_core_ai.normalize.ownership import infer_deployment_from_replicas
 from kubeoptix_core_ai.visualization.kubediagrams.config import bundled_config_path
 from kubeoptix_core_ai.visualization.kubediagrams.yamlutil import load_diagram_documents
 from kubeoptix_core_ai.visualization.png.assets import safe_asset_filename
-from kubeoptix_core_ai.visualization.png.export_config import REPORT_IMAGE_DPI
+from kubeoptix_core_ai.visualization.png.export_config import (
+    REPORT_ARCHITECTURE_DPI,
+    REPORT_ARCHITECTURE_PAGE_WIDTH_IN,
+    REPORT_IMAGE_DPI,
+    LayoutProfile,
+    layout_profile_for_output,
+)
 from kubeoptix_core_ai.visualization.png.postprocess import finalize_report_png
 
 logger = logging.getLogger(__name__)
@@ -169,11 +175,18 @@ def _force_horizontal_rankdir(dot_source: str) -> str:
     return tuned
 
 
-def _ensure_root_layout_attrs(dot_source: str) -> str:
+def _ensure_root_layout_attrs(
+    dot_source: str,
+    *,
+    layout_profile: LayoutProfile = "diagram",
+) -> str:
     match = re.search(r"(?m)^(\tgraph \[)([^\]]*)(\])", dot_source)
     if match is None:
         return dot_source
     body = match.group(2)
+    if layout_profile == "architecture" and "splines=" in body:
+        body = re.sub(r"splines=\w+", "splines=ortho", body)
+    dpi = REPORT_ARCHITECTURE_DPI if layout_profile == "architecture" else REPORT_IMAGE_DPI
     additions: list[str] = []
     if "compound=" not in body:
         additions.append("compound=true")
@@ -184,9 +197,26 @@ def _ensure_root_layout_attrs(dot_source: str) -> str:
     if "margin=" not in body:
         additions.append("margin=0")
     if "pad=" not in body:
-        additions.append("pad=0.05")
+        additions.append("pad=0.08" if layout_profile == "architecture" else "pad=0.05")
     if "dpi=" not in body:
-        additions.append(f"dpi={REPORT_IMAGE_DPI}")
+        additions.append(f"dpi={dpi}")
+    if layout_profile == "architecture":
+        if "splines=" not in body:
+            additions.append("splines=ortho")
+        if "nodesep=" not in body:
+            additions.append("nodesep=0.75")
+        if "ranksep=" not in body:
+            additions.append("ranksep=1.2")
+        if "fontsize=" not in body:
+            additions.append("fontsize=11")
+        if "labelfontsize=" not in body:
+            additions.append("labelfontsize=10")
+        if "ordering=" not in body:
+            additions.append("ordering=out")
+        if "overlap=" not in body:
+            additions.append("overlap=false")
+        if "size=" not in body:
+            additions.append(f'size="{REPORT_ARCHITECTURE_PAGE_WIDTH_IN},!"')
     if not additions:
         return dot_source
     return (
@@ -238,7 +268,23 @@ def _sequence_category_clusters_horizontally(dot_source: str) -> str:
     return dot_source[:first] + "\n".join(ordered_parts) + "\n" + dot_source[last:]
 
 
-def _layout_rank_constraints(dot_source: str) -> str:
+def _prefer_orthogonal_edge_routing(dot_source: str) -> str:
+    """Aplica splines=ortho em arestas sem estilo explícito (menos cruzamentos)."""
+
+    def _replace(match: re.Match[str]) -> str:
+        attrs = match.group(2)
+        if "splines=" not in attrs:
+            attrs += " splines=ortho"
+        return match.group(1) + attrs + match.group(3)
+
+    return _DOT_EDGE_RE.sub(_replace, dot_source)
+
+
+def _layout_rank_constraints(
+    dot_source: str,
+    *,
+    layout_profile: LayoutProfile = "diagram",
+) -> str:
     workloads = _extract_dot_subgraph(dot_source, "subgraph cluster_Workloads {")
     if workloads is None:
         return dot_source
@@ -276,9 +322,12 @@ def _layout_rank_constraints(dot_source: str) -> str:
         if node and (not anchors or anchors[-1] != node):
             anchors.append(node)
 
+    cluster_gap = "4" if layout_profile == "architecture" else "2"
+
     for source_id, target_id in zip(anchors, anchors[1:], strict=False):
         lines.append(
-            f"\t{source_id} -> {target_id} [style=invis weight=200 minlen=2];"
+            f"\t{source_id} -> {target_id} "
+            f"[style=invis weight=200 minlen={cluster_gap}];"
         )
 
     if not lines:
@@ -1000,7 +1049,12 @@ class KubeDiagramsRenderer:
             return ["-c", "/kdconfig/kube-diagrams.yml"]
         return ["-c", str(self._config_path)]
 
-    def _tune_dot_layout(self, dot_source: str) -> str:
+    def _tune_dot_layout(
+        self,
+        dot_source: str,
+        *,
+        layout_profile: LayoutProfile = "diagram",
+    ) -> str:
         """Organiza agrupamentos em fluxo horizontal (LR) para leitura humana."""
         tuned = _force_horizontal_rankdir(dot_source)
         membership: dict[str, str] = {}
@@ -1014,8 +1068,11 @@ class KubeDiagramsRenderer:
         tuned = tuned.replace(" rank=min", "").replace("rank=min ", "")
         if membership:
             tuned = _relax_inter_cluster_edges(tuned, membership)
-        tuned = _ensure_root_layout_attrs(tuned)
-        return _layout_rank_constraints(tuned)
+        tuned = _ensure_root_layout_attrs(tuned, layout_profile=layout_profile)
+        tuned = _layout_rank_constraints(tuned, layout_profile=layout_profile)
+        if layout_profile == "architecture":
+            tuned = _prefer_orthogonal_edge_routing(tuned)
+        return tuned
 
     def _read_generated_dot(self, requested: Path) -> str | None:
         stem = requested.with_suffix("")
@@ -1092,7 +1149,7 @@ class KubeDiagramsRenderer:
                 (getattr(result, "stderr", None) or "")[:1000],
             )
             return False
-        finalize_report_png(output_path, profile="diagram")
+        finalize_report_png(output_path, profile=layout_profile_for_output(output_path))
         return True
 
     def _render_dot_to_png(self, dot_source: str, output_path: Path) -> bool:
@@ -1123,7 +1180,10 @@ class KubeDiagramsRenderer:
                     pass
             if result is not None and result.returncode == 0:
                 if output_path.is_file() and output_path.stat().st_size > 0:
-                    finalize_report_png(output_path, profile="diagram")
+                    finalize_report_png(
+                        output_path,
+                        profile=layout_profile_for_output(output_path),
+                    )
                     return True
         runtime = find_container_runtime()
         if runtime is not None:
@@ -1168,7 +1228,10 @@ class KubeDiagramsRenderer:
             source = self._read_generated_dot(dot_output)
             if not source:
                 return False
-            tuned = self._tune_dot_layout(source)
+            tuned = self._tune_dot_layout(
+                source,
+                layout_profile=layout_profile_for_output(output_path),
+            )
             return self._render_dot_to_png(tuned, output_path)
         except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError):
             return False
@@ -1296,5 +1359,5 @@ class KubeDiagramsRenderer:
             self._set_error(f"arquivo PNG não produzido ou vazio: {output_path}")
             return False
 
-        finalize_report_png(output_path, profile="diagram")
+        finalize_report_png(output_path, profile=layout_profile_for_output(output_path))
         return True

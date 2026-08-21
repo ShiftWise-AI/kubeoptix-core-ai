@@ -15,12 +15,17 @@ from kubeoptix_core_ai.visualization.models import (
 )
 from kubeoptix_core_ai.visualization.png import PngRenderer
 from kubeoptix_core_ai.visualization.png.export_config import (
+    REPORT_ARCHITECTURE_MAX_HEIGHT_PX,
+    REPORT_ARCHITECTURE_MAX_UPSCALE,
+    REPORT_ARCHITECTURE_MAX_WIDTH_PX,
+    REPORT_ARCHITECTURE_TARGET_WIDTH_PX,
     REPORT_CHART_MAX_HEIGHT_PX,
     REPORT_CHART_MAX_WIDTH_PX,
 )
 from kubeoptix_core_ai.visualization.png.postprocess import (
     _content_bbox,
     cap_png_dimensions,
+    expand_png_to_target_width,
     optimize_png_canvas,
 )
 
@@ -80,6 +85,23 @@ def test_cap_png_dimensions_downscales_large_images(tmp_path: Path) -> None:
     assert changed is True
     assert width <= REPORT_CHART_MAX_WIDTH_PX
     assert height <= REPORT_CHART_MAX_HEIGHT_PX
+
+
+def test_expand_png_to_target_width_upscales_narrow_architecture(tmp_path: Path) -> None:
+    path = tmp_path / "narrow.png"
+    Image.new("RGB", (800, 400), (20, 20, 20)).save(path)
+    changed = expand_png_to_target_width(
+        path,
+        target_width=REPORT_ARCHITECTURE_TARGET_WIDTH_PX,
+        max_height=REPORT_ARCHITECTURE_MAX_HEIGHT_PX,
+        max_scale=REPORT_ARCHITECTURE_MAX_UPSCALE,
+    )
+    with Image.open(path) as image:
+        width, height = image.size
+    assert changed is True
+    assert width >= 1000
+    assert width <= REPORT_ARCHITECTURE_MAX_WIDTH_PX
+    assert height <= REPORT_ARCHITECTURE_MAX_HEIGHT_PX
 
 
 def test_rendered_charts_respect_report_size_limits(tmp_path: Path) -> None:

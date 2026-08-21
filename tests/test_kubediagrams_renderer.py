@@ -485,6 +485,26 @@ def test_bundled_kube_diagrams_config_defines_category_clusters() -> None:
     assert loaded["nodes"]["BuildConfig/build.openshift.io/v1"]["show"] is False
 
 
+def test_tune_dot_layout_architecture_profile_uses_high_resolution_layout() -> None:
+    renderer = KubeDiagramsRenderer(Path("/tmp"), namespace="shiftwise-ai")
+    source = (
+        "digraph {\n"
+        '\tgraph [fontcolor="#2D3436" rankdir=TB splines=line]\n'
+        '\tsubgraph "cluster_Namespace: shiftwise-ai" {\n'
+        '\t\tgraph [bgcolor=white rankdir=LR tooltip="Namespace: shiftwise-ai"]\n'
+        "\t}\n"
+        "}\n"
+    )
+    tuned = renderer._tune_dot_layout(source, layout_profile="architecture")
+    assert "dpi=200" in tuned
+    assert "splines=ortho" in tuned
+    assert "nodesep=0.75" in tuned
+    assert "ranksep=1.2" in tuned
+    assert 'size="6.625,!"' in tuned
+    assert "rankdir=LR" in tuned
+    assert "rankdir=TB" not in tuned
+
+
 def test_tune_dot_layout_forces_horizontal_rankdir() -> None:
     renderer = KubeDiagramsRenderer(Path("/tmp"), namespace="shiftwise-ai")
     source = (

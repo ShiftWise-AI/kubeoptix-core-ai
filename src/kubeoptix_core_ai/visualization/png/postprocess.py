@@ -4,16 +4,20 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Literal
 
 import numpy as np
 from PIL import Image, UnidentifiedImageError
 
 from kubeoptix_core_ai.visualization.png.export_config import (
+    REPORT_ARCHITECTURE_MAX_HEIGHT_PX,
+    REPORT_ARCHITECTURE_MAX_UPSCALE,
+    REPORT_ARCHITECTURE_MAX_WIDTH_PX,
+    REPORT_ARCHITECTURE_TARGET_WIDTH_PX,
     REPORT_CHART_MAX_HEIGHT_PX,
     REPORT_CHART_MAX_WIDTH_PX,
     REPORT_DIAGRAM_MAX_HEIGHT_PX,
     REPORT_DIAGRAM_MAX_WIDTH_PX,
+    LayoutProfile,
 )
 
 logger = logging.getLogger(__name__)
@@ -161,12 +165,66 @@ def cap_png_dimensions(
         return False
 
 
+def expand_png_to_target_width(
+    path: Path,
+    *,
+    target_width: int,
+    max_height: int,
+    max_scale: float = 1.35,
+) -> bool:
+    """Amplia PNGs estreitos até a largura-alvo (sem exceder max_scale)."""
+    if not path.is_file() or path.stat().st_size <= 0:
+        return False
+
+    try:
+        with Image.open(path) as source:
+            orig_w, orig_h = source.size
+            if orig_w >= target_width or orig_w <= 0 or orig_h <= 0:
+                return False
+
+            scale = min(target_width / orig_w, max_scale)
+            new_w = max(1, int(round(orig_w * scale)))
+            new_h = max(1, int(round(orig_h * scale)))
+            if new_h > max_height:
+                fit_scale = max_height / new_h
+                new_w = max(1, int(round(new_w * fit_scale)))
+                new_h = max(1, int(round(new_h * fit_scale)))
+            if new_w <= orig_w and new_h <= orig_h:
+                return False
+
+            resized = source.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            resized.save(path, format="PNG", optimize=True)
+            return True
+    except (OSError, UnidentifiedImageError, ValueError) as exc:
+        logger.debug("Ignorando expansão de PNG inválido %s: %s", path, exc)
+        return False
+
+
 def finalize_report_png(
     path: Path,
     *,
-    profile: Literal["chart", "diagram"] = "chart",
+    profile: LayoutProfile = "chart",
 ) -> None:
     """Normaliza margens e aplica limites de dimensão para edição Markdown/PDF."""
+    if profile == "architecture":
+        optimize_png_canvas(
+            path,
+            margin_max_px=18,
+            min_fill_ratio_to_skip=0.90,
+        )
+        cap_png_dimensions(
+            path,
+            max_width=REPORT_ARCHITECTURE_MAX_WIDTH_PX,
+            max_height=REPORT_ARCHITECTURE_MAX_HEIGHT_PX,
+        )
+        expand_png_to_target_width(
+            path,
+            target_width=REPORT_ARCHITECTURE_TARGET_WIDTH_PX,
+            max_height=REPORT_ARCHITECTURE_MAX_HEIGHT_PX,
+            max_scale=REPORT_ARCHITECTURE_MAX_UPSCALE,
+        )
+        return
+
     optimize_png_canvas(path)
     if profile == "diagram":
         cap_png_dimensions(
