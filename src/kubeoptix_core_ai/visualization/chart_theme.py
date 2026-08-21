@@ -1,4 +1,8 @@
-"""Paleta e utilitários compartilhados entre gráficos HTML do projeto."""
+"""Paleta e utilitários compartilhados entre gráficos do relatório.
+
+Paleta C — PatternFly sóbria (tons 400/500). Vermelho só a partir da 7ª cor,
+para não parecer alerta em gráficos com poucas séries.
+"""
 
 from __future__ import annotations
 
@@ -6,24 +10,24 @@ import hashlib
 import html
 
 CHART_COLORS: tuple[str, ...] = (
-    "#4472C4",
-    "#ED7D31",
-    "#70AD47",
-    "#5B9BD5",
-    "#A5A5A5",
-    "#FFC000",
-    "#264478",
-    "#9E480E",
-    "#43682B",
-    "#255E91",
-    "#997300",
-    "#636363",
+    "#004B95",
+    "#38812F",
+    "#005F60",
+    "#3C3D99",
+    "#C58C00",
+    "#C46100",
+    "#A30000",
+    "#4D4D4D",
+    "#002F5D",
+    "#23511E",
+    "#003737",
+    "#2A265F",
 )
 
 CHART_FONT = "system-ui,-apple-system,sans-serif"
 CHART_TEXT_COLOR = "#151515"
-CHART_MUTED_COLOR = "#666666"
-CHART_AXIS_COLOR = "#D9D9D9"
+CHART_MUTED_COLOR = "#6A6E73"
+CHART_AXIS_COLOR = "#D2D2D2"
 
 CHART_MAX_WIDTH = 720
 CHART_LEGEND_MIN_WIDTH = 200
