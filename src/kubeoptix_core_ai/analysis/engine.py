@@ -7,8 +7,9 @@ from dataclasses import dataclass
 
 from kubeoptix_core_ai.analysis.context import AnalysisContext
 from kubeoptix_core_ai.analysis.cpu import analyze_cpu
-from kubeoptix_core_ai.analysis.inventory import analyze_inventory
+from kubeoptix_core_ai.analysis.events import analyze_events
 from kubeoptix_core_ai.analysis.findings_builder import FindingBuilder
+from kubeoptix_core_ai.analysis.inventory import analyze_inventory
 from kubeoptix_core_ai.analysis.memory import analyze_memory
 from kubeoptix_core_ai.analysis.probes import analyze_probes
 from kubeoptix_core_ai.analysis.qos import analyze_qos
@@ -22,6 +23,7 @@ from kubeoptix_core_ai.loaders.workload_loader import WorkloadLoader
 from kubeoptix_core_ai.loaders.worknode_loader import WorknodeLoader
 from kubeoptix_core_ai.ml.config import MLConfig
 from kubeoptix_core_ai.ml.engine import MLEngine
+from kubeoptix_core_ai.ml.fleet import FleetBaseline, build_fleet_baseline
 from kubeoptix_core_ai.models.finding import AnalysisReport, Finding, Severity
 from kubeoptix_core_ai.models.node import WorkNode
 from kubeoptix_core_ai.models.workload import NamespaceWorkloadBundle
@@ -44,6 +46,7 @@ _DETERMINISTIC_ANALYZERS: tuple[tuple[str, Callable[..., None]], ...] = (
     ("scheduling", analyze_scheduling),
     ("armazenamento", analyze_storage),
     ("inventário", analyze_inventory),
+    ("events", analyze_events),
     ("workload-node", analyze_workload_node),
 )
 
@@ -78,6 +81,16 @@ class AnalysisEngine:
         self._workload_loader = WorkloadLoader(self._config)
         self._worknode_loader = WorknodeLoader(self._config)
         self._ml_engine = MLEngine(self._ml_config)
+        self._fleet_baseline: FleetBaseline | None | bool = False
+
+    def _resolve_fleet_baseline(self) -> FleetBaseline | None:
+        if self._fleet_baseline is False:
+            try:
+                fleet_workloads = self._workload_loader.load_fleet_workloads()
+                self._fleet_baseline = build_fleet_baseline(fleet_workloads)
+            except Exception:  # noqa: BLE001 — baseline é complementar
+                self._fleet_baseline = None
+        return self._fleet_baseline if self._fleet_baseline else None
 
     def analyze_namespace(
         self,
@@ -120,7 +133,10 @@ class AnalysisEngine:
                 on_analysis_step(index, step_count, label)
 
         if ml_enabled:
-            ml_findings, ml_limits = self._ml_engine.analyze(ctx)
+            ml_findings, ml_limits = self._ml_engine.analyze(
+                ctx,
+                fleet=self._resolve_fleet_baseline(),
+            )
             all_findings = builder.findings + ml_findings
             if on_analysis_step is not None:
                 on_analysis_step(step_count, step_count, "ML")

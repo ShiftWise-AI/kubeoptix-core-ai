@@ -260,3 +260,154 @@ def analyze_workload_node(ctx: AnalysisContext, builder: FindingBuilder) -> None
                 "Pool compartilhado entre namespaces."
             ),
         )
+
+    _analyze_datacenter_placement(ctx, builder)
+    _analyze_app_pool_capacity(ctx, builder)
+
+
+def _analyze_datacenter_placement(
+    ctx: AnalysisContext,
+    builder: FindingBuilder,
+) -> None:
+    node_by_name = {n.name: n for n in ctx.nodes}
+    namespace = ctx.namespace
+
+    dc_counts: Counter[str] = Counter()
+    unknown = 0
+    for workload in ctx.workloads:
+        for placement in workload.placements:
+            if not placement.node_name:
+                continue
+            node = node_by_name.get(placement.node_name)
+            if node and node.datacenter:
+                dc_counts[node.datacenter] += 1
+            else:
+                unknown += 1
+
+    if dc_counts:
+        builder.add(
+            category="WNODE",
+            severity=Severity.INFO,
+            confidence=Confidence.HIGH,
+            namespace=namespace,
+            evidence=(
+                EvidenceItem(
+                    description="Pods por datacenter",
+                    value=str(dict(dc_counts)),
+                ),
+                EvidenceItem(
+                    description="Pods sem datacenter no nó",
+                    value=str(unknown),
+                ),
+            ),
+            analysis=(
+                "Distribuição de pods do namespace entre datacenters: "
+                + ", ".join(f"{dc}={count}" for dc, count in sorted(dc_counts.items()))
+                + ("." if not unknown else f" ({unknown} sem label datacenter).")
+            ),
+            limitation="Baseado em label `datacenter` dos worknodes e placement dos pods.",
+        )
+
+    for workload in ctx.workloads:
+        if not workload.placements:
+            continue
+        desired = workload.replicas_desired or len(workload.placements)
+        if desired < 2:
+            continue
+        dcs: set[str] = set()
+        for placement in workload.placements:
+            node = node_by_name.get(placement.node_name or "")
+            if node and node.datacenter:
+                dcs.add(node.datacenter)
+        if len(dcs) == 1 and len(workload.placements) >= 2:
+            only_dc = next(iter(dcs))
+            builder.add(
+                category="WNODE",
+                severity=Severity.MEDIUM,
+                confidence=Confidence.HIGH,
+                namespace=namespace,
+                workload=workload.name,
+                evidence=(
+                    EvidenceItem(
+                        description="Datacenters com pods do workload",
+                        value=only_dc,
+                    ),
+                    EvidenceItem(
+                        description="Pods observados",
+                        value=str(len(workload.placements)),
+                    ),
+                ),
+                analysis=(
+                    f"`{workload.name}` possui {len(workload.placements)} pod(s) "
+                    f"somente no datacenter `{only_dc}`."
+                ),
+                impact="Falha do datacenter único indisponibiliza todas as réplicas observadas.",
+                recommendation=(
+                    "Distribuir réplicas entre datacenters (labels `datacenter`) "
+                    "via topologySpreadConstraints ou afinidade."
+                ),
+                sources=(workload.source,),
+            )
+
+
+def _analyze_app_pool_capacity(
+    ctx: AnalysisContext,
+    builder: FindingBuilder,
+) -> None:
+    app_nodes = tuple(n for n in ctx.nodes if n.role == "app")
+    if len(app_nodes) < 2:
+        return
+
+    mem_values = [
+        n.memory_allocatable.normalized_value
+        for n in app_nodes
+        if n.memory_allocatable is not None
+    ]
+    cpu_values = [
+        n.cpu_allocatable.normalized_value
+        for n in app_nodes
+        if n.cpu_allocatable is not None
+    ]
+    if len(mem_values) < 2:
+        return
+
+    mem_min, mem_max = min(mem_values), max(mem_values)
+    if mem_max <= 0 or mem_min / mem_max >= 0.85:
+        return
+
+    dcs = sorted({n.datacenter or "—" for n in app_nodes})
+    cpu_display = "—"
+    if cpu_values:
+        cpu_display = (
+            f"{format_cpu_millicores(min(cpu_values))}–"
+            f"{format_cpu_millicores(max(cpu_values))}"
+        )
+    builder.add(
+        category="WNODE",
+        severity=Severity.INFO,
+        confidence=Confidence.HIGH,
+        namespace=ctx.namespace,
+        evidence=(
+            EvidenceItem(
+                description="Pool type=app",
+                value=(
+                    f"nós={len(app_nodes)}, datacenters={dcs}, "
+                    f"mem={format_memory_bytes(mem_min)}–{format_memory_bytes(mem_max)}, "
+                    f"cpu={cpu_display}"
+                ),
+            ),
+        ),
+        analysis=(
+            f"O pool `type=app` tem {len(app_nodes)} nós em {', '.join(dcs)} "
+            f"com memória allocatable heterogênea "
+            f"({format_memory_bytes(mem_min)} a {format_memory_bytes(mem_max)})."
+        ),
+        impact=(
+            "Pods com memory request acima do menor nó do pool só agendam "
+            "em um subconjunto dos workers."
+        ),
+        recommendation=(
+            "Dimensionar requests pelo menor nó do pool app ou separar pools "
+            "por capacidade."
+        ),
+    )

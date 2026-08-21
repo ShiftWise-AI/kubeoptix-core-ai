@@ -6,6 +6,7 @@ dos findings gerados — sem inventar métricas, rotas, logs ou eventos ausentes
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from kubeoptix_core_ai.analysis.helpers import (
 from kubeoptix_core_ai.models.finding import AnalysisReport, Finding, Severity
 from kubeoptix_core_ai.models.inventory import (
     ConfigMapSpec,
+    EventSpec,
     OperatorCSVSpec,
     PodLogSummary,
     RouteSpec,
@@ -56,7 +58,7 @@ from kubeoptix_core_ai.visualization.pipeline import (
 REPORT_FILE_ENCODING = "utf-8"
 REPORT_FILE_LANGUAGE = "pt-BR"
 
-_ML_CATEGORIES = frozenset({"MLSTAT", "MLCOMP", "MLANOM", "MLCLUST", "MLSIM"})
+_ML_CATEGORIES = frozenset({"MLSTAT", "MLCOMP", "MLANOM", "MLCLUST", "MLSIM", "MLFLEET"})
 _SECTION_CATEGORIES: dict[str, tuple[str, ...]] = {
     "cpu": ("CPU", "RES"),
     "memory": ("MEM",),
@@ -65,8 +67,10 @@ _SECTION_CATEGORIES: dict[str, tuple[str, ...]] = {
     "probes": ("PROBE",),
     "scheduling": ("SCHED",),
     "storage": ("STORAGE",),
+    "events": ("EVENT",),
+    "operators": ("OPER",),
     "workload_node": ("WNODE",),
-    "inventory": ("ROUTE", "CONFIG", "LOG", "OPER"),
+    "inventory": ("ROUTE", "CONFIG", "LOG"),
     "anomalies": tuple(_ML_CATEGORIES),
 }
 
@@ -83,12 +87,14 @@ _FINDING_CATEGORY_LEGEND: tuple[tuple[str, str], ...] = (
     ("ROUTE", "Routes e exposição HTTP/TLS"),
     ("CONFIG", "ConfigMaps e configuração"),
     ("LOG", "Logs coletados dos pods"),
-    ("OPER", "Operadores (OLM/CSV)"),
-    ("MLSTAT", "Sinais estatísticos locais"),
+    ("OPER", "Operadores (OLM/CSV) e atualização de canal"),
+    ("EVENT", "Events Kubernetes/OpenShift (Warning)"),
+    ("MLSTAT", "Sinais estatísticos locais (namespace)"),
     ("MLCOMP", "Comparação estatística entre workloads"),
     ("MLANOM", "Detecção de anomalias estatísticas"),
     ("MLCLUST", "Agrupamento (clustering) de workloads"),
     ("MLSIM", "Similaridade entre workloads"),
+    ("MLFLEET", "Comparação com percentis da frota corporativa"),
 )
 
 _SEVERITY_LEGEND: tuple[tuple[str, str], ...] = (
@@ -165,6 +171,11 @@ _REDHAT_TECHNICAL_DOCUMENTATION: tuple[tuple[str, str, str], ...] = (
         "Operadores (OLM)",
         "Red Hat OpenShift — Operator Lifecycle Manager (OLM)",
         "https://docs.openshift.com/container-platform/latest/operators/understanding/olm-understanding-olm.html",
+    ),
+    (
+        "Atualização de Operators",
+        "Red Hat OpenShift — Upgrading installed Operators",
+        "https://docs.openshift.com/container-platform/latest/operators/admin/olm-upgrading-operators.html",
     ),
     (
         "ConfigMaps",
@@ -545,9 +556,13 @@ def _architecture_legend() -> str:
         "- **Networking** — fundo verde (`Service`, `Route`, `Ingress`, `NetworkPolicy`); "
         "Services exibem a porta (`nome:8000`).\n"
         "- **Storage** — fundo âmbar (`PVC`, `PV`, `StorageClass`).\n"
-        "- **Configuration** — fundo cinza (`ConfigMap`, `Secret`, `ServiceAccount`).\n\n"
-        "**Leitura sugerida:** da esquerda para a direita — "
-        "Workloads → Configuration → Storage → Networking.\n\n"
+        "- **Configuration** — fundo cinza (`ConfigMap`, `Secret`, `ServiceAccount`).\n"
+        "- **Nodes** — fundo lilás (`Node`), no diagrama de placement.\n\n"
+        "**Leitura sugerida:** faixas horizontais em **largura de página** (paisagem). "
+        "Cada agrupamento ocupa uma faixa da esquerda para a direita; "
+        "as faixas seguem de cima para baixo — "
+        "Workloads, Configuration, Storage, Networking "
+        "(e Nodes, no diagrama de placement).\n\n"
         "**Tipos de aresta:** `selector` (tracejada), referência direta (sólida), "
         "`controller`/`owner` (pontilhada).\n\n"
         "> Artefatos de Build (`BuildConfig`, `Build`, `ImageStream`, pods `*-build`), "
@@ -833,7 +848,8 @@ def _findings_index_table(
                 f"{_finding_link(last_id, section_ids)} "
                 f"({len(group)})"
             )
-            workload_col = f"{len(group)} workloads"
+            unit = "itens" if primary.id.startswith("ML-") else "workloads"
+            workload_col = f"{len(group)} {unit}"
         rows.append(
             (
                 finding_id,
@@ -867,6 +883,10 @@ def _acceptance_criterion(finding: Finding) -> str:
         return "Validar com métricas históricas de 7–30 dias antes de promover a produção"
     if category in ("SCHED", "WNODE", "REPLICA"):
         return "Réplicas distribuídas em nós distintos (`oc get pods -o wide`)"
+    if category == "EVENT":
+        return "Warning deixou de se repetir em `oc get events` após a correção"
+    if category == "OPER":
+        return "CSV no currentCSV do canal aprovado; Subscription sem UpgradePending"
     if category in _ML_CATEGORIES:
         return "Investigação documentada; sem ação obrigatória sem evidência adicional"
     return "Validar em ambiente não produtivo antes de promover"
@@ -1025,6 +1045,27 @@ def _executive_narrative(
             "coletados — nível DEBUG dominante ou arquivos vazios."
         )
 
+    oper_findings = [
+        f for f in report.findings
+        if f.category == "OPER" and f.severity in (Severity.MEDIUM, Severity.HIGH)
+    ]
+    if oper_findings:
+        themes.append(
+            f"7. **Operators (OLM)**: {len(oper_findings)} operador(es) com "
+            "versão atrás do canal padrão do catálogo — upgrade é ação de "
+            "cluster admin quando o CSV está `Copied`."
+        )
+
+    event_findings = [
+        f for f in report.findings
+        if f.category == "EVENT" and f.severity in (Severity.HIGH, Severity.CRITICAL)
+    ]
+    if event_findings:
+        themes.append(
+            f"8. **Events Warning**: {len(event_findings)} grupo(s) de eventos "
+            "de alta severidade (HPA, volume, crash/OOM)."
+        )
+
     if report.ml_enabled:
         ml_count = sum(1 for f in report.findings if f.category in _ML_CATEGORIES)
         if ml_count:
@@ -1070,6 +1111,18 @@ def _derive_conclusion_priorities(findings: tuple[Finding, ...]) -> str:
         for f in findings
     ):
         topics.append("hardening de Routes/TLS")
+    if any(
+        f.category == "OPER"
+        and f.severity in (Severity.MEDIUM, Severity.HIGH, Severity.CRITICAL)
+        for f in findings
+    ):
+        topics.append("atualização de Operators (OLM)")
+    if any(
+        f.category == "EVENT"
+        and f.severity in (Severity.HIGH, Severity.CRITICAL)
+        for f in findings
+    ):
+        topics.append("Events Warning (HPA/volume/probes)")
     if any(f.category == "CPU" for f in findings) and not any(
         f.category == "MEM" and f.severity in (Severity.HIGH, Severity.CRITICAL)
         for f in findings
@@ -1256,27 +1309,61 @@ def _secrets_table(refs: tuple[SecretReference, ...]) -> str:
     return intro + _md_table(("Secret (nome)", "Forma de uso", "Workload"), rows)
 
 
+def _unique_operators(operators: tuple[OperatorCSVSpec, ...]) -> tuple[OperatorCSVSpec, ...]:
+    seen: dict[str, OperatorCSVSpec] = {}
+    for op in operators:
+        seen.setdefault(op.name, op)
+    return tuple(seen.values())
+
+
 def _operators_table(operators: tuple[OperatorCSVSpec, ...]) -> str:
-    if not operators:
+    unique = _unique_operators(operators)
+    if not unique:
         return "_Nenhum ClusterServiceVersion encontrado no dump._\n"
     rows: list[tuple[str, ...]] = []
-    for op in operators:
+    copied = 0
+    for op in unique:
+        if op.is_cluster_copied:
+            copied += 1
+        status = op.upgrade_status or "Unknown"
         rows.append(
             (
                 op.display_name or op.name,
                 op.name,
                 op.version or "—",
+                op.package_name or "—",
+                op.default_channel or "—",
+                op.channel_current_csv or "—",
+                status,
                 op.phase or "—",
                 op.reason or "—",
-                op.upgrade_status or "—",
             )
         )
-    note = (
-        "> CSVs em phase `Succeeded` com reason `Copied` são operadores cluster-wide "
-        "copiados para o namespace.\n\n"
+    notes: list[str] = []
+    if copied:
+        notes.append(
+            f"> {copied} CSV(s) com reason `Copied` são cópias cluster-wide no "
+            "namespace — o upgrade é do administrador do cluster, não do dono "
+            "deste namespace. A tabela abaixo não se repete como inventário "
+            "de aplicação."
+        )
+    notes.append(
+        "> Comparação com `currentCSV` do **canal padrão** do PackageManifest. "
+        "Não há Subscription neste dump; o canal realmente instalado pode "
+        "diferir do default."
     )
-    return note + _md_table(
-        ("Operador", "CSV", "Versão", "Phase", "Reason", "Upgrade"),
+    return "\n\n".join(notes) + "\n\n" + _md_table(
+        (
+            "Operador",
+            "CSV instalado",
+            "Versão",
+            "Package",
+            "Canal padrão",
+            "CSV do canal",
+            "Upgrade",
+            "Phase",
+            "Reason",
+        ),
         rows,
     )
 
@@ -1300,6 +1387,125 @@ def _pod_logs_table(logs: tuple[PodLogSummary, ...]) -> str:
         ("App", "Pod", "Linhas", "Vazio?", "Níveis detectados"),
         rows,
     )
+
+
+def _events_summary_table(events: tuple[EventSpec, ...]) -> str:
+    if not events:
+        return "_Nenhum Event coletado no dump deste namespace._\n"
+
+    type_counts = Counter((e.event_type or "—") for e in events)
+    warning_reasons: Counter[str] = Counter()
+    for event in events:
+        if (event.event_type or "").lower() == "warning" and event.reason:
+            warning_reasons[event.reason] += event.count or 1
+    rows = [(kind, str(count)) for kind, count in sorted(type_counts.items())]
+    intro = _md_table(("Tipo", "Arquivos"), rows)
+    if not warning_reasons:
+        return intro + "\n_Nenhum Event Warning com `reason` no dump._\n"
+    reason_rows = [
+        (reason, str(count))
+        for reason, count in warning_reasons.most_common(15)
+    ]
+    return (
+        intro
+        + "\n**Reasons Warning (contagem acumulada):**\n\n"
+        + _md_table(("Reason", "Count"), reason_rows)
+    )
+
+
+def _worknodes_inventory_table(nodes: tuple[WorkNode, ...]) -> str:
+    if not nodes:
+        return "_Nenhum worknode no dump._\n"
+    rows: list[tuple[str, ...]] = []
+    for node in nodes:
+        cpu = (
+            format_cpu_millicores(node.cpu_allocatable.normalized_value)
+            if node.cpu_allocatable
+            else "—"
+        )
+        mem = (
+            format_memory_bytes(node.memory_allocatable.normalized_value)
+            if node.memory_allocatable
+            else "—"
+        )
+        mco = "—"
+        if node.mco_state:
+            synced = node.mco_synced
+            extra = ""
+            if synced is True:
+                extra = "/synced"
+            elif synced is False:
+                extra = "/drift"
+            mco = f"{node.mco_state}{extra}"
+        rows.append(
+            (
+                f"`{node.name}`",
+                node.datacenter or "—",
+                node_role_label(node),
+                cpu,
+                mem,
+                str(node.max_pods) if node.max_pods is not None else "—",
+                "Ready" if node.ready else ("NotReady" if node.ready is False else "—"),
+                node.kubelet_version or "—",
+                node.os_image or "—",
+                mco,
+            )
+        )
+    return _md_table(
+        (
+            "Nó",
+            "Datacenter",
+            "Papel",
+            "CPU alloc",
+            "Mem alloc",
+            "Pods",
+            "Ready",
+            "Kubelet",
+            "OS / RHCOS",
+            "MCO",
+        ),
+        rows,
+    )
+
+
+def _worknodes_role_summary(nodes: tuple[WorkNode, ...]) -> str:
+    if not nodes:
+        return ""
+    counts: Counter[tuple[str, str]] = Counter()
+    for node in nodes:
+        counts[(node.datacenter or "—", node.role or "—")] += 1
+    rows = [
+        (dc, role, str(count))
+        for (dc, role), count in sorted(counts.items())
+    ]
+    return _md_table(("Datacenter", "Papel", "Nós"), rows)
+
+
+def _dc_placement_table(
+    workloads: tuple[Workload, ...],
+    nodes: tuple[WorkNode, ...],
+) -> str:
+    node_map = _node_by_name(nodes)
+
+    rows: list[tuple[str, ...]] = []
+    for wl in workloads:
+        if not wl.placements:
+            continue
+        dcs: Counter[str] = Counter()
+        for placement in wl.placements:
+            node = node_map.get(placement.node_name or "")
+            dc = node.datacenter if node and node.datacenter else "—"
+            dcs[dc] += 1
+        rows.append(
+            (
+                f"`{wl.name}`",
+                str(len(wl.placements)),
+                ", ".join(f"{dc}={n}" for dc, n in sorted(dcs.items())),
+            )
+        )
+    if not rows:
+        return "_Placement por datacenter indisponível (sem pods com nodeName)._\n"
+    return _md_table(("Workload", "Pods", "Datacenters"), rows)
 
 
 def _referenced_configmap_names(workloads: tuple[Workload, ...]) -> set[str]:
@@ -1457,6 +1663,7 @@ class MarkdownReportGenerator:
             "- ConfigMaps (`resources/configmaps/`, `apps/*/configmaps/`)\n"
             "- Secrets (referências por nome nos workloads)\n"
             "- ClusterServiceVersions / PackageManifests (OLM)\n"
+            "- Events (`resources/events/`, `resources/events.events.k8s.io/`)\n"
             "- Logs de pods (`apps/*/pod-logs/*.log`)\n"
             "- Worknodes (`worknodes/*.yaml`)\n\n"
             "**Correlação:** pods são associados ao controller canônico via "
@@ -1465,7 +1672,7 @@ class MarkdownReportGenerator:
             "recursivamente e fundida com `resources/`. ReplicaSets históricos "
             "não geram workloads duplicados.\n\n"
             "**Não analisados nesta versão:** conteúdo de Secrets (apenas referências "
-            "por nome), eventos, NetworkPolicies, séries temporais."
+            "por nome), NetworkPolicies, séries temporais."
         )
         if diag.processed_files:
             sections.append("\nArquivos processados (amostra):\n")
@@ -1504,9 +1711,6 @@ class MarkdownReportGenerator:
             )
         sections.append("\n### Inventário — Secrets referenciados\n")
         sections.append(_secrets_table(ctx.secret_references))
-        if ctx.operators:
-            sections.append("\n### Inventário — Operadores (ClusterServiceVersions)\n")
-            sections.append(_operators_table(ctx.operators))
         if ctx.pod_logs:
             sections.append("\n### Inventário — Logs de pods (amostra)\n")
             sections.append(_pod_logs_table(ctx.pod_logs))
@@ -1622,7 +1826,44 @@ class MarkdownReportGenerator:
                 )
             )
 
-        sections.extend(["", "---", "", "## 14. Correlação workload × worknode", ""])
+        sections.extend(["", "---", "", "## 14. Events", ""])
+        sections.append(
+            "Events Warning agregados por `reason` e objeto envolvido. "
+            "Events Normal (Scheduled, Pulled, Started) não geram finding.\n"
+        )
+        sections.append(_events_summary_table(ctx.events))
+        sections.append(
+            _section_findings(
+                _findings_by_categories(report.findings, _SECTION_CATEGORIES["events"]),
+                "Findings de Events:",
+            )
+        )
+
+        sections.extend(
+            ["", "---", "", "## 15. Atualização de Operators (OLM)", ""]
+        )
+        sections.append(
+            "CSVs instalados comparados ao `currentCSV` do canal padrão do "
+            "PackageManifest. Catálogo completo do marketplace **não** é listado.\n"
+        )
+        sections.append(_operators_table(ctx.operators))
+        sections.append(
+            _section_findings(
+                _findings_by_categories(
+                    report.findings, _SECTION_CATEGORIES["operators"]
+                ),
+                "Findings de Operators:",
+            )
+        )
+
+        sections.extend(["", "---", "", "## 16. Correlação workload × worknode", ""])
+        sections.append("### Inventário de worknodes\n")
+        sections.append(_worknodes_inventory_table(ctx.nodes))
+        sections.append("\n### Nós por datacenter e papel\n")
+        sections.append(_worknodes_role_summary(ctx.nodes))
+        sections.append("\n### Placement por datacenter\n")
+        sections.append(_dc_placement_table(ctx.workloads, ctx.nodes))
+        sections.append("\n### Placement observado (pod × nó)\n")
         sections.append(_placement_table(ctx.workloads, ctx.nodes))
         sections.append("\n### Visualizações\n")
         sections.append(render_section_visualizations(visualizations.by_section("workload_node")))
@@ -1635,11 +1876,13 @@ class MarkdownReportGenerator:
             )
         )
 
-        sections.extend(["", "---", "", "## 15. Anomalias identificadas", ""])
+        sections.extend(["", "---", "", "## 17. Anomalias identificadas", ""])
         if report.ml_enabled:
             sections.append(
-                "Sinais da camada estatística/ML local. Outlier estatístico "
-                "**não implica** defeito operacional.\n"
+                "Sinais da camada estatística/ML local. Inclui comparação com "
+                "percentis da frota (demais namespaces do dump) quando a "
+                "amostra é suficiente. Outlier estatístico **não implica** "
+                "defeito operacional.\n"
             )
             sections.append(
                 _section_findings(
@@ -1652,46 +1895,46 @@ class MarkdownReportGenerator:
         else:
             sections.append("_Camada ML local desativada nesta execução._\n")
 
-        sections.extend(["", "---", "", "## 16. Findings", ""])
+        sections.extend(["", "---", "", "## 18. Findings", ""])
         grouped_count = len(group_identical_res_findings(report.findings))
         sections.append(
             f"Total: **{report.finding_count}** findings "
-            f"({grouped_count} entradas após agrupar RES-* equivalentes). "
-            "Detalhes completos nas seções analíticas (7–15); "
+            f"({grouped_count} entradas após agrupar RES-* e ML-* equivalentes). "
+            "Detalhes completos nas seções analíticas (7–17); "
             "índice resumido abaixo.\n"
         )
         sections.append(_findings_index_table(report.findings, section_ids))
         sections.append("\n### Visualizações\n")
         sections.append(render_section_visualizations(visualizations.by_section("findings")))
 
-        sections.extend(["", "---", "", "## 17. Oportunidades de otimização", ""])
+        sections.extend(["", "---", "", "## 19. Oportunidades de otimização", ""])
         sections.append(_opportunities_list(report.findings, section_ids))
 
-        sections.extend(["", "---", "", "## 18. Riscos", ""])
+        sections.extend(["", "---", "", "## 20. Riscos", ""])
         sections.append(_risks_list(report.findings, section_ids))
 
-        sections.extend(["", "---", "", "## 19. Recomendações", ""])
+        sections.extend(["", "---", "", "## 21. Recomendações", ""])
         sections.append("### Plano de ação\n")
         sections.append(_action_plan_table(report.findings, section_ids))
         sections.append("\n### Lista consolidada\n")
         sections.append(_recommendations_list(report.findings, section_ids))
 
-        sections.extend(["", "---", "", "## 20. Conclusão", ""])
+        sections.extend(["", "---", "", "## 22. Conclusão", ""])
         sections.append(_conclusion_text(report, bundle))
 
-        sections.extend(["", "---", "", "## 21. Limitações da análise", ""])
+        sections.extend(["", "---", "", "## 23. Limitações da análise", ""])
         if report.limitations:
             for lim in report.limitations:
                 sections.append(f"- {lim}")
         else:
             sections.append("- Nenhuma limitação adicional registrada.")
         sections.append(
-            "\n- Este relatório **não** inclui conteúdo de Secrets, eventos de "
-            "OOMKilled, throttling de CPU ou séries temporais — salvo quando "
+            "\n- Este relatório **não** inclui conteúdo de Secrets, "
+            "throttling de CPU ou séries temporais — salvo quando "
             "explicitamente presentes nos artefatos ingeridos."
         )
 
-        sections.extend(["", "---", "", "## 22. Referências", ""])
+        sections.extend(["", "---", "", "## 24. Referências", ""])
         sections.append(_references_section())
 
         return _prepare_report_content("\n".join(sections) + "\n")

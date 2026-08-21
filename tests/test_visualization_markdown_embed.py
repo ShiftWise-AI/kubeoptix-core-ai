@@ -15,13 +15,14 @@ def test_markdown_image_uses_relative_prefix() -> None:
     assert _markdown_image("CPU", "ns_assets/cpu.png") == "![CPU](./ns_assets/cpu.png)"
 
 
-def test_markdown_architecture_image_uses_standard_markdown() -> None:
+def test_markdown_architecture_image_uses_full_page_width() -> None:
     rendered = _markdown_architecture_image(
         "Arquitetura",
         "ns_assets/namespace_architecture.png",
     )
-    assert rendered == "![Arquitetura](./ns_assets/namespace_architecture.png)"
-    assert "{ width=" not in rendered
+    assert 'src="./ns_assets/namespace_architecture.png"' in rendered
+    assert "width:100%" in rendered
+    assert rendered.startswith("<img ")
 
 
 def test_embed_markdown_images_strips_legacy_width_attribute(tmp_path: Path) -> None:
@@ -35,6 +36,23 @@ def test_embed_markdown_images_strips_legacy_width_attribute(tmp_path: Path) -> 
 
     assert "data:image/png;base64," in embedded
     assert "{ width=100% }" not in embedded
+
+
+def test_embed_markdown_images_inlines_html_full_width(tmp_path: Path) -> None:
+    assets = tmp_path / "ns_assets"
+    assets.mkdir()
+    png = assets / "arch.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    content = (
+        '<img src="./ns_assets/arch.png" alt="Arquitetura" '
+        'style="width:100%;max-width:100%;height:auto;" />\n'
+    )
+    embedded = embed_markdown_images(content, markdown_dir=tmp_path)
+
+    assert "data:image/png;base64," in embedded
+    assert "width:100%" in embedded
+    assert "./ns_assets/" not in embedded
 
 
 def test_embed_markdown_images_inlines_local_png(tmp_path: Path) -> None:

@@ -1,4 +1,4 @@
-"""Agrupamento de findings RES-* equivalentes para leitura humana."""
+"""Agrupamento de findings RES-* e ML-* equivalentes para leitura humana."""
 
 from __future__ import annotations
 
@@ -10,6 +10,11 @@ from kubeoptix_core_ai.models.finding import Finding, Severity
 
 _NUMERIC_RE = re.compile(r"\d+(?:\.\d+)?")
 _QUOTED_RE = re.compile(r"`[^`]+`")
+_GROUPABLE_ID_PREFIXES = ("RES-", "ML-")
+
+
+def _is_groupable(finding: Finding) -> bool:
+    return finding.id.startswith(_GROUPABLE_ID_PREFIXES)
 
 
 def _normalize_analysis(text: str) -> str:
@@ -20,7 +25,7 @@ def _normalize_analysis(text: str) -> str:
 
 
 def res_finding_group_key(finding: Finding) -> tuple[object, ...]:
-    """Chave de equivalência para findings RES-* (ignora workload e valores numéricos)."""
+    """Chave de equivalência para findings agrupáveis (ignora workload e valores)."""
     return (
         finding.category,
         finding.severity,
@@ -35,10 +40,10 @@ def res_finding_group_key(finding: Finding) -> tuple[object, ...]:
 def group_identical_res_findings(
     findings: Sequence[Finding],
 ) -> list[tuple[Finding, ...]]:
-    """Agrupa findings RES-* equivalentes, preservando a ordem da primeira ocorrência."""
+    """Agrupa findings RES-* e ML-* equivalentes, preservando a ordem da primeira ocorrência."""
     key_to_members: dict[tuple[object, ...], list[Finding]] = {}
     for finding in findings:
-        if not finding.id.startswith("RES-"):
+        if not _is_groupable(finding):
             continue
         key = res_finding_group_key(finding)
         key_to_members.setdefault(key, []).append(finding)
@@ -46,7 +51,7 @@ def group_identical_res_findings(
     emitted: set[tuple[object, ...]] = set()
     groups: list[tuple[Finding, ...]] = []
     for finding in findings:
-        if not finding.id.startswith("RES-"):
+        if not _is_groupable(finding):
             groups.append((finding,))
             continue
         key = res_finding_group_key(finding)
@@ -74,6 +79,12 @@ def _group_id_label(findings: Sequence[Finding]) -> str:
     return f"{findings[0].id} … {findings[-1].id}"
 
 
+def _group_unit(findings: Sequence[Finding]) -> str:
+    if findings and findings[0].id.startswith("ML-"):
+        return "itens"
+    return "workloads"
+
+
 def _group_title(findings: Sequence[Finding]) -> str:
     primary = findings[0]
     if len(findings) == 1:
@@ -81,7 +92,7 @@ def _group_title(findings: Sequence[Finding]) -> str:
     label = _group_id_label(findings)
     return (
         f"### {primary.id} — [{primary.category}] "
-        f"({len(findings)} workloads; {label})"
+        f"({len(findings)} {_group_unit(findings)}; {label})"
     )
 
 
@@ -148,12 +159,47 @@ def _format_grouped_sources(findings: Sequence[Finding]) -> list[str]:
     return lines
 
 
+def _format_grouped_ml_table(findings: Sequence[Finding]) -> str:
+    """Tabela compacta para findings ML-* equivalentes (um bloco em vez de N seções)."""
+    rows = [
+        (
+            finding.id,
+            f"`{finding.workload}`" if finding.workload else "—",
+            _format_evidence_cell(finding),
+        )
+        for finding in findings
+    ]
+    header = "| ID | Workload | Evidência |\n| --- | --- | --- |"
+    body = "\n".join(f"| `{fid}` | {workload} | {evidence} |" for fid, workload, evidence in rows)
+    return f"{header}\n{body}"
+
+
 def format_grouped_finding(findings: Sequence[Finding]) -> str:
-    """Formata um finding isolado ou um grupo de findings RES-* equivalentes."""
+    """Formata um finding isolado ou um grupo de findings RES-*/ML-* equivalentes."""
     if len(findings) == 1:
         return format_finding(findings[0])
 
     primary = findings[0]
+    if primary.id.startswith("ML-"):
+        lines = [
+            _group_title(findings),
+            "",
+            f"**Severidade:** {primary.severity.value}",
+            f"**Confiança:** {primary.confidence.value}",
+            f"**Itens agrupados ({len(findings)}):** {_workloads_display(findings)}",
+            "",
+            "Findings equivalentes do mesmo padrão ML; detalhes por item na tabela.",
+            "",
+            _format_grouped_ml_table(findings),
+        ]
+        if primary.impact:
+            lines.extend(["", "**Impacto potencial:**", "", primary.impact])
+        if primary.recommendation:
+            lines.extend(["", "**Recomendação:**", "", primary.recommendation])
+        if primary.limitation:
+            lines.extend(["", "**Limitação:**", "", primary.limitation])
+        return "\n".join(lines)
+
     lines = [
         _group_title(findings),
         "",

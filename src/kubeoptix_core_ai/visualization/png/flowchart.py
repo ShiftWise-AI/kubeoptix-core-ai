@@ -10,7 +10,7 @@ from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Polygon
 
 from kubeoptix_core_ai.visualization.models import DiagramEdge, DiagramNode, FlowchartDataset
 from kubeoptix_core_ai.visualization.png._mpl import matplotlib, save_figure  # noqa: F401
-from kubeoptix_core_ai.visualization.png.export_config import EMPTY_CHART_FIGSIZE, flowchart_figsize
+from kubeoptix_core_ai.visualization.png.export_config import EMPTY_CHART_FIGSIZE, flowchart_figsize, layout_profile_for_output
 
 import matplotlib.pyplot as plt
 
@@ -28,6 +28,7 @@ _NODE_STYLE: dict[str, dict[str, str | float]] = {
 }
 
 _DEFAULT_STYLE = {"facecolor": "#FFFFFF", "edgecolor": "#4472C4", "boxstyle": "round,pad=0.2"}
+_MAX_NODES_PER_COLUMN = 4
 
 
 @dataclass(frozen=True)
@@ -143,17 +144,27 @@ def _layout_group(
     group_height = 0.0
     for layer_index in sorted(by_layer):
         layer_nodes = by_layer[layer_index]
-        column_height = 0.0
-        column_width = 0.0
+        col_x = x_cursor
+        col_y = 0.0
+        col_width = 0.0
+        stacked = 0
+        layer_height = 0.0
         for node in layer_nodes:
             width, height = _estimate_size(node.label)
+            if stacked >= _MAX_NODES_PER_COLUMN:
+                col_x += col_width + 0.4
+                col_y = 0.0
+                col_width = 0.0
+                stacked = 0
             layouts.append(
-                _NodeLayout(node=node, x=x_cursor, y=-column_height, width=width, height=height)
+                _NodeLayout(node=node, x=col_x, y=-col_y, width=width, height=height)
             )
-            column_height += height + row_gap
-            column_width = max(column_width, width)
-        group_height = max(group_height, column_height)
-        x_cursor += column_width + layer_gap
+            col_y += height + row_gap
+            col_width = max(col_width, width)
+            stacked += 1
+            layer_height = max(layer_height, col_y)
+        group_height = max(group_height, layer_height)
+        x_cursor = col_x + col_width + layer_gap
     return layouts, x_cursor, group_height
 
 
@@ -207,7 +218,7 @@ def _draw_node(ax: plt.Axes, layout: _NodeLayout) -> None:
         layout.node.label,
         ha="center",
         va="center",
-        fontsize=7,
+        fontsize=9,
         wrap=True,
     )
 
@@ -239,7 +250,7 @@ def _empty_chart(output_path: Path, title: str) -> None:
     ax.text(0.5, 0.5, "Sem dados para exibir", ha="center", va="center", fontsize=12, color="#666666")
     ax.set_title(title, fontsize=12, fontweight="bold")
     fig.tight_layout()
-    save_figure(fig, output_path)
+    save_figure(fig, output_path, profile=layout_profile_for_output(output_path))
     plt.close(fig)
 
 
@@ -307,5 +318,5 @@ def render_flowchart_png(dataset: FlowchartDataset, output_path: Path) -> None:
     ax.autoscale()
     ax.margins(0.15)
     fig.tight_layout()
-    save_figure(fig, output_path)
+    save_figure(fig, output_path, profile=layout_profile_for_output(output_path))
     plt.close(fig)

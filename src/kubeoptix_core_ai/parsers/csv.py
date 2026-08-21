@@ -13,6 +13,11 @@ from kubeoptix_core_ai.parsers.base import load_yaml_file
 _CSV_NAME_RE = re.compile(r"^(.+?)\.v[\d]")
 _LINE_VALUE_RE = re.compile(r"^(\w+): (.+)$")
 
+# CSV extraído do nome do ClusterServiceVersion vs nome do PackageManifest.
+CSV_PACKAGE_ALIASES: dict[str, tuple[str, ...]] = {
+    "kiali-operator": ("kiali-ossm",),
+}
+
 
 def _package_name_from_csv(csv_name: str) -> str:
     match = _CSV_NAME_RE.match(csv_name)
@@ -144,3 +149,24 @@ def parse_packagemanifest(file_path: Path) -> tuple[str, str, str | None]:
                 break
 
     return package_name, str(default_channel) if default_channel else "", channel_csv
+
+
+def packagemanifest_lookup_stems(package_names: set[str]) -> set[str]:
+    """Stems de PackageManifest a carregar para os CSVs instalados."""
+    stems = set(package_names)
+    for package_name in package_names:
+        stems.update(CSV_PACKAGE_ALIASES.get(package_name, ()))
+    return stems
+
+
+def catalog_keys_for_packagemanifest(
+    package_name: str,
+    channel_csv: str | None,
+) -> tuple[str, ...]:
+    """Chaves de índice: nome do pacote e prefixo do currentCSV do canal."""
+    keys = [package_name]
+    if channel_csv:
+        prefix = _package_name_from_csv(channel_csv)
+        if prefix and prefix not in keys:
+            keys.append(prefix)
+    return tuple(keys)

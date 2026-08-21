@@ -91,6 +91,14 @@ clusters:
       pencolor: "#196F3D"
       style: rounded
       fontcolor: "#196F3D"
+  - label: kubeoptix.io/cat-nodes
+    title: "{}"
+    recommended: true
+    graph_attr:
+      bgcolor: "#F5EEF8"
+      pencolor: "#6C3483"
+      style: rounded
+      fontcolor: "#6C3483"
 
 nodes:
   Endpoints/v1:
@@ -279,11 +287,23 @@ nodes:
       edges.add_wait_for_services("spec.initContainers")
       edges.add_networks("metadata.annotations")
       edges.add_priority_class("spec.priorityClassName")
+      if query_path(resource, "spec.nodeName"):
+          edges.add_edge_to(
+              "spec.nodeName",
+              ".",
+              None,
+              "Node",
+              "v1",
+              "REFERENCE",
+          )
       for idx, edge in enumerate(edges):
           if isinstance(edge, (list, tuple)) and len(edge) == 2:
               rid = str(edge[0])
               if "/ServiceAccount/" in rid or "/ConfigMap/" in rid or "/Secret/" in rid:
                   edges[idx] = [edge[0], "REFERENCE-UP"]
+  Node/v1:
+    scope: Cluster
+    diagram_node_classname: diagrams.k8s.infra.Node
   BuildConfig/build.openshift.io/v1:
     show: false
   Build/build.openshift.io/v1:

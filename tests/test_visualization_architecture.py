@@ -90,7 +90,10 @@ def test_architecture_section_in_namespace_overview(
         "Diagrama gerado a partir dos manifests YAML" in overview
         or "Diagrama de arquitetura indisponível" in overview
     )
-    if "![Arquitetura do namespace]" in overview:
+    if (
+        "![Arquitetura do namespace]" in overview
+        or 'alt="Arquitetura do namespace"' in overview
+    ):
         assert (assets_dir / "namespace_architecture.png").is_file()
 
 

@@ -73,7 +73,7 @@ def test_markdown_groups_res_findings_in_sections(
 
     assert "(2 workloads" in md
     assert "**Workloads afetados (2):**" in md
-    analysis_blocks = md.count("**Análise:**")
+    analysis_blocks = md.count("**Análise:**") + md.count("| ID | Workload | Evidência |")
     grouped = len(group_identical_res_findings(bundle.analysis.findings))
     assert analysis_blocks == grouped
     assert analysis_blocks < bundle.analysis.finding_count
@@ -111,3 +111,52 @@ def test_grouped_format_lists_per_workload_evidence() -> None:
     assert "RES-PROBE-001 … RES-PROBE-002" in rendered
     assert "| `alpha` |" in rendered
     assert "| `beta` |" in rendered
+
+
+def test_group_identical_ml_findings_renders_compact_table() -> None:
+    from kubeoptix_core_ai.models.finding import Confidence, EvidenceItem, Finding, Severity
+
+    template = dict(
+        category="MLSIM",
+        severity=Severity.INFO,
+        confidence=Confidence.MEDIUM,
+        namespace="ns",
+        impact="Candidatos para comparação.",
+        recommendation="Investigar diferenças de tráfego.",
+    )
+    findings = tuple(
+        Finding(
+            id=f"ML-MLSIM-{idx:03d}",
+            evidence=(
+                EvidenceItem(
+                    description="Par de workloads",
+                    value=f"{left} ↔ {right}",
+                ),
+                EvidenceItem(
+                    description="Similaridade de cosseno",
+                    value="0.990",
+                ),
+            ),
+            analysis=(
+                f"Os workloads `{left}` e `{right}` apresentam perfil de "
+                "features estruturadas muito similar (cosseno 99.0%) no namespace."
+            ),
+            **template,
+        )
+        for idx, (left, right) in enumerate(
+            (("app-a", "app-b"), ("app-c", "app-d"), ("app-e", "app-f")),
+            start=1,
+        )
+    )
+
+    groups = group_identical_res_findings(findings)
+    assert len(groups) == 1
+    assert len(groups[0]) == 3
+
+    rendered = format_grouped_finding(groups[0])
+    assert "| ID | Workload | Evidência |" in rendered
+    assert "`ML-MLSIM-001`" in rendered
+    assert "`ML-MLSIM-003`" in rendered
+    assert rendered.count("**Recomendação:**") == 1
+    assert "3 itens" in rendered
+    assert "Investigar diferenças de tráfego." in rendered

@@ -151,27 +151,52 @@ def analyze_inventory(ctx: AnalysisContext, builder: FindingBuilder) -> None:
     upgrade_ops = [
         op for op in bundle.operators if op.upgrade_status == "UpgradeAvailable"
     ]
-    if upgrade_ops:
-        names = ", ".join(op.name for op in upgrade_ops[:5])
+    for op in upgrade_ops:
+        copied_note = (
+            " CSV com reason `Copied` (cópia cluster-wide no namespace)."
+            if op.is_cluster_copied
+            else ""
+        )
+        installed = op.version or op.name
+        available = op.channel_current_csv or "—"
         builder.add(
             category="OPER",
-            severity=Severity.INFO,
+            severity=Severity.MEDIUM,
             confidence=Confidence.MEDIUM,
             namespace=namespace,
             evidence=(
                 EvidenceItem(
-                    description="Operadores com upgrade no canal padrão",
-                    value=names,
+                    description="ClusterServiceVersion instalado",
+                    value=f"{op.name} (version={installed})",
+                    file_path=op.source.file_path,
+                ),
+                EvidenceItem(
+                    description="Canal padrão do catálogo",
+                    value=(
+                        f"package={op.package_name or '—'}, "
+                        f"channel={op.default_channel or '—'}, "
+                        f"currentCSV={available}"
+                    ),
                 ),
             ),
             analysis=(
-                f"{len(upgrade_ops)} ClusterServiceVersion(s) com versão mais recente "
-                "disponível no canal padrão do catálogo (phase Copied — cluster-wide)."
+                f"O operador `{op.display_name or op.name}` não está na versão "
+                f"do canal padrão `{op.default_channel or '—'}` "
+                f"(instalado `{op.name}`, catálogo `{available}`).{copied_note}"
+            ),
+            impact=(
+                "Versão atrás do canal pode ficar sem correções de segurança "
+                "e de compatibilidade com o cluster."
             ),
             recommendation=(
-                "Avaliar upgrade dos operadores listados em ambiente não produtivo."
+                "Planejar o upgrade no namespace de instalação do operador "
+                "(cluster admin), validando o canal e a Subscription — "
+                "não há Subscription neste dump."
             ),
             limitation=(
-                "Inferência via PackageManifest; não há Subscription neste dump."
+                "Inferência via PackageManifest (currentCSV do canal padrão). "
+                "Sem Subscription não é possível afirmar o canal instalado "
+                "nem a estratégia de aprovação."
             ),
+            sources=(op.source,),
         )

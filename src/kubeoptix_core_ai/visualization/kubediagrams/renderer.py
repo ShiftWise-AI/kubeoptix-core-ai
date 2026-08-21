@@ -19,6 +19,7 @@ from kubeoptix_core_ai.visualization.kubediagrams.yamlutil import load_diagram_d
 from kubeoptix_core_ai.visualization.png.assets import safe_asset_filename
 from kubeoptix_core_ai.visualization.png.export_config import (
     REPORT_ARCHITECTURE_DPI,
+    REPORT_ARCHITECTURE_PAGE_HEIGHT_IN,
     REPORT_ARCHITECTURE_PAGE_WIDTH_IN,
     REPORT_IMAGE_DPI,
     LayoutProfile,
@@ -67,6 +68,7 @@ _CATEGORY_LABEL_PODS = "kubeoptix.io/cat-pods"
 _CATEGORY_LABEL_NETWORKING = "kubeoptix.io/cat-networking"
 _CATEGORY_LABEL_STORAGE = "kubeoptix.io/cat-storage"
 _CATEGORY_LABEL_CONFIG = "kubeoptix.io/cat-config"
+_CATEGORY_LABEL_NODES = "kubeoptix.io/cat-nodes"
 _KIND_CATEGORY_LABELS: dict[str, dict[str, str]] = {
     "Deployment": {_CATEGORY_LABEL_WORKLOADS: "Workloads"},
     "StatefulSet": {_CATEGORY_LABEL_WORKLOADS: "Workloads"},
@@ -93,6 +95,7 @@ _KIND_CATEGORY_LABELS: dict[str, dict[str, str]] = {
     "ConfigMap": {_CATEGORY_LABEL_CONFIG: "Configuration"},
     "Secret": {_CATEGORY_LABEL_CONFIG: "Configuration"},
     "ServiceAccount": {_CATEGORY_LABEL_CONFIG: "Configuration"},
+    "Node": {_CATEGORY_LABEL_NODES: "Nodes"},
 }
 
 
@@ -116,15 +119,16 @@ def find_kube_diagrams_executable() -> str | None:
 
 
 _DOT_NODE_ID_RE = re.compile(
-    r'(?m)^\s+("[0-9a-fA-F]{32}"|[A-Fa-f][0-9a-fA-F]{31})\s*\['
+    r'(?m)^\s+((?:"[0-9a-fA-F]{32}")|(?:[0-9a-fA-F]{32}))\s*\['
 )
 _DOT_EDGE_RE = re.compile(
-    r'(?m)^(\t(?:\"[0-9a-fA-F]{32}\"|[A-Fa-f][0-9a-fA-F]{31}) -> '
-    r'(?:\"[0-9a-fA-F]{32}\"|[A-Fa-f][0-9a-fA-F]{31}) \[)([^\]]*)(\])'
+    r'(?m)^(\t(?:\"[0-9a-fA-F]{32}\"|[0-9a-fA-F]{32}) -> '
+    r'(?:\"[0-9a-fA-F]{32}\"|[0-9a-fA-F]{32}) \[)([^\]]*)(\])'
 )
 _LEFT_COLUMN_CLUSTERS = ("Workloads", "Configuration", "Storage")
-_HORIZONTAL_CLUSTER_ORDER = (*_LEFT_COLUMN_CLUSTERS, "Networking")
+_HORIZONTAL_CLUSTER_ORDER = (*_LEFT_COLUMN_CLUSTERS, "Networking", "Nodes")
 _CATEGORY_CLUSTER_NAMES = _HORIZONTAL_CLUSTER_ORDER
+_MAX_NODES_PER_ROW = 8
 
 
 def _extract_dot_subgraph(source: str, marker: str) -> tuple[str, int, int] | None:
@@ -148,6 +152,20 @@ def _extract_dot_subgraph(source: str, marker: str) -> tuple[str, int, int] | No
 
 def _dot_node_ids(cluster_src: str) -> list[str]:
     return _DOT_NODE_ID_RE.findall(cluster_src)
+
+
+def _dot_quote(node_id: str) -> str:
+    text = node_id.strip()
+    if text.startswith('"') and text.endswith('"'):
+        return text
+    return f'"{text}"'
+
+
+def _upsert_graph_attr(body: str, key: str, value: str) -> str:
+    pattern = re.compile(rf'\b{re.escape(key)}=(?:"[^"]*"|\S+)')
+    if pattern.search(body):
+        return pattern.sub(f"{key}={value}", body, count=1)
+    return f"{body} {key}={value}"
 
 
 def _force_horizontal_rankdir(dot_source: str) -> str:
@@ -175,6 +193,19 @@ def _force_horizontal_rankdir(dot_source: str) -> str:
     return tuned
 
 
+def _force_landscape_rows(dot_source: str) -> str:
+    """Paisagem: faixas horizontais (rankdir=TB + rank=same), não colunas LR."""
+    tuned = re.sub(r"rankdir=[A-Z]{2}", "rankdir=TB", dot_source)
+    if "rankdir=" not in tuned.split("subgraph", 1)[0]:
+        tuned = re.sub(
+            r"(?m)^(\tgraph \[)([^\]]*)(\])",
+            lambda match: match.group(1) + match.group(2) + " rankdir=TB" + match.group(3),
+            tuned,
+            count=1,
+        )
+    return tuned
+
+
 def _ensure_root_layout_attrs(
     dot_source: str,
     *,
@@ -184,9 +215,35 @@ def _ensure_root_layout_attrs(
     if match is None:
         return dot_source
     body = match.group(2)
-    if layout_profile == "architecture" and "splines=" in body:
-        body = re.sub(r"splines=\w+", "splines=ortho", body)
     dpi = REPORT_ARCHITECTURE_DPI if layout_profile == "architecture" else REPORT_IMAGE_DPI
+    if layout_profile == "architecture":
+        replacements = {
+            "compound": "true",
+            "newrank": "true",
+            "rankdir": "TB",
+            "margin": "0",
+            "pad": "0.12",
+            "dpi": str(dpi),
+            "splines": "polyline",
+            "nodesep": "0.45",
+            "ranksep": "0.85",
+            "fontsize": "12",
+            "labelfontsize": "11",
+            "overlap": "false",
+            "ratio": "compress",
+            "size": (
+                f'"{REPORT_ARCHITECTURE_PAGE_WIDTH_IN},'
+                f'{REPORT_ARCHITECTURE_PAGE_HEIGHT_IN}"'
+            ),
+        }
+        for key, value in replacements.items():
+            body = _upsert_graph_attr(body, key, value)
+        return (
+            dot_source[: match.start(2)]
+            + body
+            + dot_source[match.end(2) :]
+        )
+
     additions: list[str] = []
     if "compound=" not in body:
         additions.append("compound=true")
@@ -197,26 +254,9 @@ def _ensure_root_layout_attrs(
     if "margin=" not in body:
         additions.append("margin=0")
     if "pad=" not in body:
-        additions.append("pad=0.08" if layout_profile == "architecture" else "pad=0.05")
+        additions.append("pad=0.05")
     if "dpi=" not in body:
         additions.append(f"dpi={dpi}")
-    if layout_profile == "architecture":
-        if "splines=" not in body:
-            additions.append("splines=ortho")
-        if "nodesep=" not in body:
-            additions.append("nodesep=0.75")
-        if "ranksep=" not in body:
-            additions.append("ranksep=1.2")
-        if "fontsize=" not in body:
-            additions.append("fontsize=11")
-        if "labelfontsize=" not in body:
-            additions.append("labelfontsize=10")
-        if "ordering=" not in body:
-            additions.append("ordering=out")
-        if "overlap=" not in body:
-            additions.append("overlap=false")
-        if "size=" not in body:
-            additions.append(f'size="{REPORT_ARCHITECTURE_PAGE_WIDTH_IN},!"')
     if not additions:
         return dot_source
     return (
@@ -231,7 +271,7 @@ def _ensure_root_layout_attrs(
 def _relax_inter_cluster_edges(dot_source: str, membership: dict[str, str]) -> str:
     def _replace(match: re.Match[str]) -> str:
         edge_ids = re.findall(
-            r'"[0-9a-fA-F]{32}"|[A-Fa-f][0-9a-fA-F]{31}', match.group(1)
+            r'"[0-9a-fA-F]{32}"|[0-9a-fA-F]{32}', match.group(1)
         )
         if len(edge_ids) < 2:
             return match.group(0)
@@ -268,16 +308,32 @@ def _sequence_category_clusters_horizontally(dot_source: str) -> str:
     return dot_source[:first] + "\n".join(ordered_parts) + "\n" + dot_source[last:]
 
 
-def _prefer_orthogonal_edge_routing(dot_source: str) -> str:
-    """Aplica splines=ortho em arestas sem estilo explícito (menos cruzamentos)."""
+def _prefer_polyline_edge_routing(dot_source: str) -> str:
+    """Aplica splines=polyline em arestas sem estilo explícito (leitura mais limpa)."""
 
     def _replace(match: re.Match[str]) -> str:
         attrs = match.group(2)
-        if "splines=" not in attrs:
-            attrs += " splines=ortho"
+        if "splines=" in attrs or "style=invis" in attrs:
+            return match.group(0)
+        attrs += " splines=polyline"
         return match.group(1) + attrs + match.group(3)
 
     return _DOT_EDGE_RE.sub(_replace, dot_source)
+
+
+def _rank_wrap_lines(node_ids: list[str]) -> list[str]:
+    """Quebra categorias em faixas horizontais (rank=same) para layout paisagem."""
+    unique = list(dict.fromkeys(_dot_quote(node_id) for node_id in node_ids))
+    if len(unique) < 2:
+        return []
+    chunks = [
+        unique[index : index + _MAX_NODES_PER_ROW]
+        for index in range(0, len(unique), _MAX_NODES_PER_ROW)
+    ]
+    lines = [f"\t{{ rank=same; {'; '.join(chunk)}; }}" for chunk in chunks]
+    for left, right in zip(chunks, chunks[1:], strict=False):
+        lines.append(f"\t{left[0]} -> {right[0]} [style=invis weight=80 minlen=1];")
+    return lines
 
 
 def _layout_rank_constraints(
@@ -286,44 +342,46 @@ def _layout_rank_constraints(
     layout_profile: LayoutProfile = "diagram",
 ) -> str:
     workloads = _extract_dot_subgraph(dot_source, "subgraph cluster_Workloads {")
-    if workloads is None:
-        return dot_source
-    pods = _extract_dot_subgraph(workloads[0], "subgraph cluster_Pods {")
-    pod_nodes = _dot_node_ids(pods[0]) if pods is not None else []
-    workload_nodes = _dot_node_ids(workloads[0])
-    controller_nodes = [node for node in workload_nodes if node not in set(pod_nodes)]
+    pods_src = None
+    pod_nodes: list[str] = []
+    controller_nodes: list[str] = []
+    if workloads is not None:
+        pods_src = _extract_dot_subgraph(workloads[0], "subgraph cluster_Pods {")
+        pod_nodes = _dot_node_ids(pods_src[0]) if pods_src is not None else []
+        workload_nodes = _dot_node_ids(workloads[0])
+        controller_nodes = [node for node in workload_nodes if node not in set(pod_nodes)]
     config = _extract_dot_subgraph(dot_source, "subgraph cluster_Configuration {")
     storage = _extract_dot_subgraph(dot_source, "subgraph cluster_Storage {")
     networking = _extract_dot_subgraph(dot_source, "subgraph cluster_Networking {")
+    nodes_cluster = _extract_dot_subgraph(dot_source, "subgraph cluster_Nodes {")
     config_nodes = _dot_node_ids(config[0]) if config is not None else []
     storage_nodes = _dot_node_ids(storage[0]) if storage is not None else []
     network_nodes = _dot_node_ids(networking[0]) if networking is not None else []
+    infra_nodes = _dot_node_ids(nodes_cluster[0]) if nodes_cluster is not None else []
+
+    grouped = [
+        controller_nodes,
+        pod_nodes,
+        config_nodes,
+        storage_nodes,
+        network_nodes,
+        infra_nodes,
+    ]
+    if layout_profile == "architecture" and not any(grouped):
+        grouped = [_dot_node_ids(dot_source)]
 
     lines: list[str] = []
-    if len(pod_nodes) > 1:
-        lines.append(f"\t{{ rank=same; {'; '.join(pod_nodes)}; }}")
-    if config_nodes:
-        lines.append(f"\t{{ rank=same; {'; '.join(config_nodes)}; }}")
-    if storage_nodes:
-        lines.append(f"\t{{ rank=same; {'; '.join(storage_nodes)}; }}")
+    for group in grouped:
+        lines.extend(_rank_wrap_lines(group))
 
-    workload_anchor = (
-        controller_nodes[0]
-        if controller_nodes
-        else (pod_nodes[0] if pod_nodes else None)
-    )
     anchors: list[str] = []
-    for node in (
-        workload_anchor,
-        config_nodes[0] if config_nodes else None,
-        storage_nodes[0] if storage_nodes else None,
-        network_nodes[0] if network_nodes else None,
-    ):
-        if node and (not anchors or anchors[-1] != node):
-            anchors.append(node)
+    for group in grouped:
+        if group:
+            quoted = _dot_quote(group[0])
+            if not anchors or anchors[-1] != quoted:
+                anchors.append(quoted)
 
-    cluster_gap = "4" if layout_profile == "architecture" else "2"
-
+    cluster_gap = "1"
     for source_id, target_id in zip(anchors, anchors[1:], strict=False):
         lines.append(
             f"\t{source_id} -> {target_id} "
@@ -414,6 +472,7 @@ class KubeDiagramsRenderer:
         )
 
         output_path = self._output_path(viz_id)
+        output_path.unlink(missing_ok=True)
         try:
             if not self._invoke_kube_diagrams(render_manifests, output_path):
                 if self._is_yaml_parse_error(self._last_error) and len(render_manifests) > 1:
@@ -1023,7 +1082,9 @@ class KubeDiagramsRenderer:
             logger.debug("KubeDiagrams local falhou; tentando container")
 
         runtime = find_container_runtime()
-        if runtime is not None:
+        # Diagramas de página inteira exigem DOT tunado (paisagem). O atalho
+        # kube-diagrams -f png no container ignora esse layout e gera retrato.
+        if runtime is not None and layout_profile_for_output(output_path) != "architecture":
             if self._invoke_container_kube_diagrams(
                 runtime, manifests, output_path, use_config=True
             ):
@@ -1055,8 +1116,11 @@ class KubeDiagramsRenderer:
         *,
         layout_profile: LayoutProfile = "diagram",
     ) -> str:
-        """Organiza agrupamentos em fluxo horizontal (LR) para leitura humana."""
-        tuned = _force_horizontal_rankdir(dot_source)
+        """Organiza o grafo em faixas horizontais (paisagem) ou fluxo LR (demais diagramas)."""
+        if layout_profile == "architecture":
+            tuned = _force_landscape_rows(dot_source)
+        else:
+            tuned = _force_horizontal_rankdir(dot_source)
         membership: dict[str, str] = {}
         for name in _CATEGORY_CLUSTER_NAMES:
             extracted = _extract_dot_subgraph(tuned, f"subgraph cluster_{name} {{")
@@ -1066,12 +1130,10 @@ class KubeDiagramsRenderer:
                 membership[node_id] = name
         tuned = _sequence_category_clusters_horizontally(tuned)
         tuned = tuned.replace(" rank=min", "").replace("rank=min ", "")
-        if membership:
+        if membership and layout_profile != "architecture":
             tuned = _relax_inter_cluster_edges(tuned, membership)
         tuned = _ensure_root_layout_attrs(tuned, layout_profile=layout_profile)
         tuned = _layout_rank_constraints(tuned, layout_profile=layout_profile)
-        if layout_profile == "architecture":
-            tuned = _prefer_orthogonal_edge_routing(tuned)
         return tuned
 
     def _read_generated_dot(self, requested: Path) -> str | None:
@@ -1092,6 +1154,20 @@ class KubeDiagramsRenderer:
                 return text
         return None
 
+    def _dot_png_graph_args(self, output_path: Path) -> list[str]:
+        profile = layout_profile_for_output(output_path)
+        if profile != "architecture":
+            return []
+        return [
+            (
+                f"-Gsize={REPORT_ARCHITECTURE_PAGE_WIDTH_IN},"
+                f"{REPORT_ARCHITECTURE_PAGE_HEIGHT_IN}"
+            ),
+            f"-Gdpi={REPORT_ARCHITECTURE_DPI}",
+            "-Gratio=compress",
+            "-Grankdir=TB",
+        ]
+
     def _dot_icon_volume_args(self, dot_source: str) -> list[str]:
         images = [
             Path(path)
@@ -1111,6 +1187,7 @@ class KubeDiagramsRenderer:
     ) -> bool:
         dot_name = f".kd_layout_{output_path.stem}.dot"
         host_dot = self._assets_dir / dot_name
+        result = None
         try:
             host_dot.write_text(dot_source, encoding="utf-8")
             command = [
@@ -1123,6 +1200,7 @@ class KubeDiagramsRenderer:
                 KUBEDIAGRAMS_IMAGE,
                 "dot",
                 "-Tpng",
+                *self._dot_png_graph_args(output_path),
                 "-o",
                 f"/out/{output_path.name}",
                 f"/out/{dot_name}",
@@ -1139,10 +1217,13 @@ class KubeDiagramsRenderer:
             return False
         finally:
             try:
-                host_dot.unlink(missing_ok=True)
+                if result is not None and result.returncode == 0 and output_path.is_file():
+                    host_dot.unlink(missing_ok=True)
             except OSError:
                 pass
-        if not (output_path.is_file() and output_path.stat().st_size > 0):
+        if result is None or result.returncode != 0 or not (
+            output_path.is_file() and output_path.stat().st_size > 0
+        ):
             logger.warning(
                 "dot em container não produziu PNG (exit %s): %s",
                 getattr(result, "returncode", "?"),
@@ -1164,7 +1245,14 @@ class KubeDiagramsRenderer:
             try:
                 dot_path.write_text(dot_source, encoding="utf-8")
                 result = subprocess.run(
-                    [shutil.which("dot"), "-Tpng", "-o", str(output_path), str(dot_path)],
+                    [
+                        shutil.which("dot"),
+                        "-Tpng",
+                        *self._dot_png_graph_args(output_path),
+                        "-o",
+                        str(output_path),
+                        str(dot_path),
+                    ],
                     capture_output=True,
                     text=True,
                     timeout=_DEFAULT_TIMEOUT_SECONDS,

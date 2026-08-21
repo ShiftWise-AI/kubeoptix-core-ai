@@ -79,6 +79,24 @@ class PodLogSummary(BaseModel):
     runtime_signals: tuple[str, ...] = ()
 
 
+class EventSpec(BaseModel):
+    """Evento Kubernetes/OpenShift (sem inventar campos ausentes)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    namespace: str
+    event_type: str | None = None
+    reason: str | None = None
+    message: str | None = None
+    count: int | None = None
+    involved_kind: str | None = None
+    involved_name: str | None = None
+    first_timestamp: str | None = None
+    last_timestamp: str | None = None
+    source: DataSourceRef
+
+
 class OperatorCSVSpec(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -93,3 +111,7 @@ class OperatorCSVSpec(BaseModel):
     channel_current_csv: str | None = None
     upgrade_status: str | None = None  # AtLatestKnown | UpgradeAvailable | Unknown
     source: DataSourceRef
+
+    @property
+    def is_cluster_copied(self) -> bool:
+        return (self.reason or "").lower() == "copied"

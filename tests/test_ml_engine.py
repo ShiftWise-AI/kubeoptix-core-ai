@@ -154,3 +154,24 @@ def test_similar_workloads_reported() -> None:
     sim = [f for f in findings if f.category == "MLSIM"]
     assert sim
     assert any("svc-a" in f.analysis and "svc-b" in f.analysis for f in sim)
+
+
+def test_fleet_baseline_emits_mlfleet_for_outlier() -> None:
+    from kubeoptix_core_ai.ml.fleet import build_fleet_baseline
+
+    fleet: list[Workload] = []
+    for ns in ("fleet-a", "fleet-b"):
+        for i in range(6):
+            wl = _workload(f"{ns}-w{i}", cpu_req=200, mem_req=256)
+            fleet.append(wl.model_copy(update={"namespace": ns, "name": f"{ns}-w{i}"}))
+    baseline = build_fleet_baseline(tuple(fleet))
+    assert baseline is not None
+    assert baseline.namespace_count == 2
+
+    ctx = AnalysisContext(
+        bundle=_bundle(_workload("hot", cpu_req=8000, mem_req=4096)),
+        nodes=(),
+    )
+    findings, limits = MLEngine(MLConfig(random_seed=42)).analyze(ctx, fleet=baseline)
+    assert any("Baseline de frota" in lim for lim in limits)
+    assert any(f.category in ("MLFLEET", "MLANOM") for f in findings)

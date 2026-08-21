@@ -60,8 +60,10 @@ def test_markdown_report_structure(analysis_tree: Path, tmp_path: Path) -> None:
     assert "# Relatório de Assessment" in md
     assert "## 1. Legenda de siglas" in md
     assert "## 2. Sumário executivo" in md
-    assert "## 21. Limitações da análise" in md
-    assert "## 22. Referências" in md
+    assert "## 14. Events" in md
+    assert "## 15. Atualização de Operators (OLM)" in md
+    assert "## 23. Limitações da análise" in md
+    assert "## 24. Referências" in md
     assert "backend-acesso-app" in md
     assert "**Análise:**" in md
     assert "**Confiança:**" in md
@@ -81,13 +83,13 @@ def test_markdown_findings_section_is_index_not_duplicate(
     bundle = AssessmentPipeline(config).run(EXAMPLE_NAMESPACE)
     md = MarkdownReportGenerator().generate(bundle)
 
-    section_16_start = md.index("## 16. Findings")
-    section_17_start = md.index("## 17. Oportunidades")
-    section_16 = md[section_16_start:section_17_start]
+    section_18_start = md.index("## 18. Findings")
+    section_19_start = md.index("## 19. Oportunidades")
+    section_16 = md[section_18_start:section_19_start]
 
     assert "| ID | Severidade |" in section_16
     assert section_16.count("**Origem dos dados:**") == 0
-    analysis_count = md.count("**Análise:**")
+    analysis_count = md.count("**Análise:**") + md.count("| ID | Workload | Evidência |")
     grouped_count = len(group_identical_res_findings(bundle.analysis.findings))
     assert analysis_count == grouped_count
 
@@ -162,6 +164,8 @@ def test_acronyms_legend_section(analysis_tree: Path, tmp_path: Path) -> None:
     assert "| CPU | Dimensionamento e uso de CPU |" in legend
     assert "| CRITICAL | Risco imediato" in legend
     assert "| HPA | Horizontal Pod Autoscaler |" in legend
+    assert "| EVENT | Events Kubernetes/OpenShift (Warning) |" in legend
+    assert "| MLFLEET | Comparação com percentis da frota corporativa |" in legend
     assert "| RES-* | Prefixo dos IDs" in legend
 
 
@@ -173,7 +177,7 @@ def test_references_section(analysis_tree: Path, tmp_path: Path) -> None:
     bundle = AssessmentPipeline(config).run(EXAMPLE_NAMESPACE)
     md = MarkdownReportGenerator().generate(bundle)
 
-    refs_start = md.index("## 22. Referências")
+    refs_start = md.index("## 24. Referências")
     refs = md[refs_start:]
 
     assert "### Documentação técnica — Red Hat" in refs
@@ -193,8 +197,8 @@ def test_references_section(analysis_tree: Path, tmp_path: Path) -> None:
     assert "OpenShift for Developers" in refs
     assert "Kubernetes Patterns" in refs
     assert "Site Reliability Engineering" in refs
-    assert refs.startswith("## 22. Referências")
-    limitations_end = md.index("## 21. Limitações da análise")
+    assert refs.startswith("## 24. Referências")
+    limitations_end = md.index("## 23. Limitações da análise")
     assert refs_start > limitations_end
 
 
@@ -221,8 +225,8 @@ def test_recommendations_link_to_finding_anchors(
         assert f"### {section_id}" in md
         assert f"[`{finding_id}`](#{anchor})" in md
 
-    rec_start = md.index("## 19. Recomendações")
-    rec_end = md.index("## 20. Conclusão")
+    rec_start = md.index("## 21. Recomendações")
+    rec_end = md.index("## 22. Conclusão")
     recommendations = md[rec_start:rec_end]
     assert "[`RES-" in recommendations
     assert "(#res-" in recommendations
@@ -256,7 +260,7 @@ def test_conclusion_derives_priorities_from_findings_not_hardcoded(
     assert f"`{OTHER_NAMESPACE}`" in md
     assert EXAMPLE_NAMESPACE not in md
     assert "backend-acesso" not in md
-    conclusion_start = md.index("## 20. Conclusão")
+    conclusion_start = md.index("## 22. Conclusão")
     conclusion = md[conclusion_start:]
     assert "backends" not in conclusion.lower()
     assert OTHER_NAMESPACE in conclusion

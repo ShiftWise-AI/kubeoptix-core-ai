@@ -31,6 +31,8 @@ class MLConfig:
     min_workloads_anom: int = 5
     min_workloads_cluster: int = 3
     min_workloads_similarity: int = 2
+    min_fleet_namespaces: int = 2
+    min_fleet_workloads: int = 8
 
     @classmethod
     def from_env(cls) -> MLConfig:

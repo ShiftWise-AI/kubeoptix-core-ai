@@ -21,6 +21,8 @@ def test_parse_node_osc3dv0117() -> None:
     assert node.ready is True
     assert node.max_pods == 250
     assert node.taints == ()
+    assert node.kubelet_version is None
+    assert node.mco_synced is None
 
     assert node.cpu_capacity is not None
     assert node.cpu_capacity.raw == "8"

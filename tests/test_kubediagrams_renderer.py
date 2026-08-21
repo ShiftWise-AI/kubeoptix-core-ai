@@ -481,6 +481,10 @@ def test_bundled_kube_diagrams_config_defines_category_clusters() -> None:
     assert cluster_labels.index("kubeoptix.io/cat-storage") < cluster_labels.index(
         "kubeoptix.io/cat-networking"
     )
+    assert cluster_labels.index("kubeoptix.io/cat-networking") < cluster_labels.index(
+        "kubeoptix.io/cat-nodes"
+    )
+    assert "Node/v1" in loaded["nodes"]
     assert "Route/route.openshift.io/v1" in loaded["nodes"]
     assert loaded["nodes"]["BuildConfig/build.openshift.io/v1"]["show"] is False
 
@@ -496,13 +500,15 @@ def test_tune_dot_layout_architecture_profile_uses_high_resolution_layout() -> N
         "}\n"
     )
     tuned = renderer._tune_dot_layout(source, layout_profile="architecture")
-    assert "dpi=200" in tuned
-    assert "splines=ortho" in tuned
-    assert "nodesep=0.75" in tuned
-    assert "ranksep=1.2" in tuned
-    assert 'size="6.625,!"' in tuned
-    assert "rankdir=LR" in tuned
-    assert "rankdir=TB" not in tuned
+    assert "dpi=120" in tuned
+    assert "splines=polyline" in tuned
+    assert "nodesep=0.45" in tuned
+    assert "ranksep=0.85" in tuned
+    assert 'size="16.0,6.5"' in tuned
+    assert "rankdir=TB" in tuned
+    assert "rankdir=LR" not in tuned
+    assert "ratio=compress" in tuned
+    assert "pad=0.12" in tuned
 
 
 def test_tune_dot_layout_forces_horizontal_rankdir() -> None:
@@ -563,13 +569,32 @@ def test_tune_dot_layout_sequences_clusters_horizontally() -> None:
     assert "newrank=true" in tuned
     assert "compound=true" in tuned
     assert "constraint=false" in tuned
-    assert (
-        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb -> \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\" "
-        "[style=invis weight=200 minlen=2];"
-    ) in tuned or "style=invis weight=200 minlen=2" in tuned
+    assert "style=invis weight=200 minlen=1" in tuned
     assert "cccccccccccccccccccccccccccccccc" in tuned
     assert "style=invis" in tuned
 
+
+def test_tune_dot_layout_wraps_long_ranks_into_grid() -> None:
+    renderer = KubeDiagramsRenderer(Path("/tmp"), namespace="shiftwise-ai")
+    pod_ids = [f'"{"a" * 30}{index:02x}"' for index in range(1, 11)]
+    pod_nodes = "\n".join(f"\t\t\t{node_id} [label=\"p{index}\"]" for index, node_id in enumerate(pod_ids, start=1))
+    source = f"""digraph {{
+	graph [fontcolor="#2D3436" rankdir=TB splines=line]
+	subgraph cluster_Workloads {{
+		graph [label=Workloads]
+		bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb [label="deploy"]
+		subgraph cluster_Pods {{
+			graph [label=Pods]
+{pod_nodes}
+		}}
+	}}
+}}
+"""
+    tuned = renderer._tune_dot_layout(source, layout_profile="architecture")
+    assert tuned.count("rank=same") == 2
+    assert f"{pod_ids[0]} -> {pod_ids[8]}" in tuned
+    assert "rankdir=TB" in tuned
+    assert "rankdir=LR" not in tuned
 
 
 def test_render_manifests_recovers_placeholder_sanitized_pods(tmp_path: Path) -> None:
