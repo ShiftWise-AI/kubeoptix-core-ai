@@ -53,9 +53,7 @@ def render_visualization_block(viz: VisualizationSpec) -> str:
     if viz.image_relpath:
         if viz.diagram_engine == "kubediagrams":
             lines.append(
-                "_Diagrama gerado com "
-                "[KubeDiagrams](https://github.com/philippemerle/KubeDiagrams) "
-                "a partir dos manifests YAML listados abaixo. "
+                "_Diagrama gerado a partir dos manifests YAML listados abaixo. "
                 "Cores: Workloads (azul), Pods (azul-claro), Configuration (cinza), "
                 "Storage (âmbar), Networking (verde). "
                 "Leitura: Workloads → Configuration → Storage à esquerda; "

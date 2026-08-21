@@ -85,7 +85,7 @@ def test_visualization_bundle_includes_numeric_and_flowcharts(
             assert v.yaml_sources
         else:
             assert v.unavailable_reason
-            assert "KubeDiagrams" in v.unavailable_reason
+            assert "YAML" in v.unavailable_reason
     assert list(assets_dir.glob("*.png"))
 
 

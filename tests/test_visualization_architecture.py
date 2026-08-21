@@ -87,7 +87,7 @@ def test_architecture_section_in_namespace_overview(
 
     assert "### Arquitetura" in overview
     assert (
-        "Diagrama gerado com [KubeDiagrams]" in overview
+        "Diagrama gerado a partir dos manifests YAML" in overview
         or "Diagrama de arquitetura indisponível" in overview
     )
     if "![Arquitetura do namespace]" in overview:
