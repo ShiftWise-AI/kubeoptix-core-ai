@@ -180,6 +180,10 @@ def test_references_section(analysis_tree: Path, tmp_path: Path) -> None:
     assert "### Documentação técnica complementar (upstream)" in refs
     assert "### Referências bibliográficas — Red Hat" in refs
     assert "### Referências bibliográficas complementares" in refs
+    assert "### Ferramentas e métodos analíticos" in refs
+    assert "KubeDiagrams" in refs
+    assert "Scikit-learn" in refs
+    assert "Isolation Forest" in refs
     assert (
         "| CPU e memória (requests/limits) | "
         "[Red Hat OpenShift — Recursos de computação para scheduling]"

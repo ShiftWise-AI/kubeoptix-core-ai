@@ -485,7 +485,27 @@ def test_bundled_kube_diagrams_config_defines_category_clusters() -> None:
     assert loaded["nodes"]["BuildConfig/build.openshift.io/v1"]["show"] is False
 
 
-def test_tune_dot_layout_sets_namespace_rankdir_tb() -> None:
+def test_tune_dot_layout_architecture_profile_uses_high_resolution_layout() -> None:
+    renderer = KubeDiagramsRenderer(Path("/tmp"), namespace="shiftwise-ai")
+    source = (
+        "digraph {\n"
+        '\tgraph [fontcolor="#2D3436" rankdir=TB splines=line]\n'
+        '\tsubgraph "cluster_Namespace: shiftwise-ai" {\n'
+        '\t\tgraph [bgcolor=white rankdir=LR tooltip="Namespace: shiftwise-ai"]\n'
+        "\t}\n"
+        "}\n"
+    )
+    tuned = renderer._tune_dot_layout(source, layout_profile="architecture")
+    assert "dpi=200" in tuned
+    assert "splines=ortho" in tuned
+    assert "nodesep=0.75" in tuned
+    assert "ranksep=1.2" in tuned
+    assert 'size="6.625,!"' in tuned
+    assert "rankdir=LR" in tuned
+    assert "rankdir=TB" not in tuned
+
+
+def test_tune_dot_layout_forces_horizontal_rankdir() -> None:
     renderer = KubeDiagramsRenderer(Path("/tmp"), namespace="shiftwise-ai")
     source = (
         "digraph {\n"
@@ -495,11 +515,11 @@ def test_tune_dot_layout_sets_namespace_rankdir_tb() -> None:
         "}\n"
     )
     tuned = renderer._tune_dot_layout(source)
-    assert "rankdir=TB" in tuned
-    assert tuned.count("rankdir=LR") == 0
+    assert "rankdir=LR" in tuned
+    assert "rankdir=TB" not in tuned
 
 
-def test_tune_dot_layout_stacks_left_column_and_networking_right() -> None:
+def test_tune_dot_layout_sequences_clusters_horizontally() -> None:
     renderer = KubeDiagramsRenderer(Path("/tmp"), namespace="shiftwise-ai")
     source = """digraph {
 	graph [fontcolor="#2D3436" rankdir=TB splines=ortho]
@@ -533,17 +553,20 @@ def test_tune_dot_layout_stacks_left_column_and_networking_right() -> None:
 }
 """
     tuned = renderer._tune_dot_layout(source)
-    left_idx = tuned.find("subgraph cluster_kubeoptix_left")
     workloads_idx = tuned.find("subgraph cluster_Workloads")
     config_idx = tuned.find("subgraph cluster_Configuration")
     storage_idx = tuned.find("subgraph cluster_Storage")
     networking_idx = tuned.find("subgraph cluster_Networking")
-    assert 0 <= left_idx < workloads_idx < config_idx < storage_idx < networking_idx
+    assert 0 <= workloads_idx < config_idx < storage_idx < networking_idx
+    assert "cluster_kubeoptix_left" not in tuned
     assert "rank=min" not in tuned
     assert "newrank=true" in tuned
     assert "compound=true" in tuned
     assert "constraint=false" in tuned
-    assert "{ rank=same; bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; \"dddddddddddddddddddddddddddddddd\"; }" in tuned
+    assert (
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb -> \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\" "
+        "[style=invis weight=200 minlen=2];"
+    ) in tuned or "style=invis weight=200 minlen=2" in tuned
     assert "cccccccccccccccccccccccccccccccc" in tuned
     assert "style=invis" in tuned
 

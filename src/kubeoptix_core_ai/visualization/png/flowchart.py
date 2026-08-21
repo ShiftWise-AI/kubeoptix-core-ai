@@ -9,7 +9,8 @@ from pathlib import Path
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Polygon
 
 from kubeoptix_core_ai.visualization.models import DiagramEdge, DiagramNode, FlowchartDataset
-from kubeoptix_core_ai.visualization.png._mpl import matplotlib  # noqa: F401
+from kubeoptix_core_ai.visualization.png._mpl import matplotlib, save_figure  # noqa: F401
+from kubeoptix_core_ai.visualization.png.export_config import EMPTY_CHART_FIGSIZE, flowchart_figsize
 
 import matplotlib.pyplot as plt
 
@@ -233,12 +234,12 @@ def _draw_edge(ax: plt.Axes, source: _NodeLayout, target: _NodeLayout, label: st
 
 
 def _empty_chart(output_path: Path, title: str) -> None:
-    fig, ax = plt.subplots(figsize=(8, 4))
+    fig, ax = plt.subplots(figsize=EMPTY_CHART_FIGSIZE)
     ax.axis("off")
     ax.text(0.5, 0.5, "Sem dados para exibir", ha="center", va="center", fontsize=12, color="#666666")
     ax.set_title(title, fontsize=12, fontweight="bold")
     fig.tight_layout()
-    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    save_figure(fig, output_path)
     plt.close(fig)
 
 
@@ -274,8 +275,7 @@ def render_flowchart_png(dataset: FlowchartDataset, output_path: Path) -> None:
         y_top = max(y_top, max_y)
 
     layout_by_id = {layout.node.id: layout for layout in all_layouts}
-    fig_width = max(10, min(24, x_cursor * 1.1))
-    fig_height = max(5, min(18, y_top + 2))
+    fig_width, fig_height = flowchart_figsize(x_cursor, y_top + 2)
     fig, ax = plt.subplots(figsize=(fig_width, fig_height))
 
     for title, min_x, min_y, max_x, max_y in cluster_boxes:
@@ -307,5 +307,5 @@ def render_flowchart_png(dataset: FlowchartDataset, output_path: Path) -> None:
     ax.autoscale()
     ax.margins(0.15)
     fig.tight_layout()
-    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    save_figure(fig, output_path)
     plt.close(fig)

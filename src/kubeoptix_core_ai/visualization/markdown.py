@@ -8,15 +8,24 @@ from pathlib import Path
 
 from kubeoptix_core_ai.visualization.models import VisualizationSpec, VisualizationStatus
 
-_MD_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+_MD_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)(?:\{[^}]*\})?")
+
+
+def _normalize_image_path(image_relpath: str) -> str:
+    path = image_relpath
+    if not path.startswith(("./", "../", "http://", "https://", "data:")):
+        path = f"./{path}"
+    return path
 
 
 def _markdown_image(title: str, image_relpath: str) -> str:
     alt = title.replace("[", "").replace("]", "")
-    path = image_relpath
-    if not path.startswith(("./", "../", "http://", "https://", "data:")):
-        path = f"./{path}"
-    return f"![{alt}]({path})"
+    return f"![{alt}]({_normalize_image_path(image_relpath)})"
+
+
+def _markdown_architecture_image(title: str, image_relpath: str) -> str:
+    """Referência Markdown padrão; largura de página vem do PNG exportado."""
+    return _markdown_image(title, image_relpath)
 
 
 def embed_markdown_images(content: str, *, markdown_dir: Path) -> str:
@@ -53,13 +62,10 @@ def render_visualization_block(viz: VisualizationSpec) -> str:
     if viz.image_relpath:
         if viz.diagram_engine == "kubediagrams":
             lines.append(
-                "_Diagrama gerado com "
-                "[KubeDiagrams](https://github.com/philippemerle/KubeDiagrams) "
-                "a partir dos manifests YAML listados abaixo. "
+                "_Diagrama gerado a partir dos manifests YAML listados abaixo. "
                 "Cores: Workloads (azul), Pods (azul-claro), Configuration (cinza), "
                 "Storage (âmbar), Networking (verde). "
-                "Leitura: Workloads → Configuration → Storage à esquerda; "
-                "Networking à direita. "
+                "Leitura horizontal: Workloads → Configuration → Storage → Networking. "
                 "Pods equivalentes são agrupados com o rótulo `nome (N replicas)`. "
                 "Services exibem a porta (`nome:8000`)._"
             )

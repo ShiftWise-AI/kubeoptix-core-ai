@@ -43,6 +43,7 @@ from kubeoptix_core_ai.visualization.datasets.architecture import (
 from kubeoptix_core_ai.visualization.diagram_renderer import DiagramRenderer
 from kubeoptix_core_ai.visualization.kubediagrams.mapping import manifests_for_namespace_architecture
 from kubeoptix_core_ai.visualization.markdown import (
+    _markdown_architecture_image,
     _markdown_image,
     embed_markdown_images,
     render_section_visualizations,
@@ -218,6 +219,41 @@ _SUPPLEMENTARY_BIBLIOGRAPHIC_REFERENCES: tuple[tuple[str, str], ...] = (
         "Burns, B.; Grant, B.; Oppenheimer, D.; Brewer, E.; Wilkes, J. "
         "*Borg, Omega, and Kubernetes.* ACM Queue, 14(1), 2016.",
         "Contexto histórico de orquestração em larga escala.",
+    ),
+)
+
+_TOOLS_AND_ANALYTICS_REFERENCES: tuple[tuple[str, str], ...] = (
+    (
+        "[KubeDiagrams](https://github.com/philippemerle/KubeDiagrams) "
+        "(Merle, P.; ferramenta open source para diagramas Kubernetes).",
+        "Geração dos diagramas de arquitetura e comunicação a partir dos "
+        "manifests YAML ingeridos pelo agente.",
+    ),
+    (
+        "Pedregosa, F. et al. *Scikit-learn: Machine Learning in Python.* "
+        "Journal of Machine Learning Research, 12, 2825–2830, 2011.",
+        "Biblioteca utilizada na camada local de análise estatística e ML "
+        "(Isolation Forest, K-Means, padronização de features).",
+    ),
+    (
+        "Liu, F. T.; Ting, K. M.; Zhou, Z.-H. *Isolation Forest.* "
+        "IEEE International Conference on Data Mining (ICDM), 2008.",
+        "Detecção multivariada de anomalias em perfis de recursos "
+        "(findings `MLANOM`).",
+    ),
+    (
+        "MacQueen, J. *Some Methods for Classification and Analysis of "
+        "Multivariate Observations.* Proceedings of the Fifth Berkeley "
+        "Symposium on Mathematical Statistics and Probability, 1967.",
+        "Agrupamento K-Means de workloads por vetor de recursos "
+        "(findings `MLCLUST`).",
+    ),
+    (
+        "Métodos estatísticos robustos (z-score via mediana/MAD, IQR, "
+        "distância ao centroide, similaridade por cosseno)",
+        "Análise offline sobre features numéricas estruturadas dos workloads; "
+        "findings `MLSTAT`, `MLCOMP` e `MLSIM`. Executada localmente, sem LLM "
+        "externo nem APIs de IA generativa.",
     ),
 )
 
@@ -496,11 +532,11 @@ def _runtime_metrics_table(workloads: tuple[Workload, ...]) -> str:
     )
 
 
-def _architecture_legend_kubediagrams() -> str:
+def _architecture_legend() -> str:
     return (
-        "**Diagrama gerado com [KubeDiagrams](https://github.com/philippemerle/KubeDiagrams)** "
-        "a partir dos manifests YAML do namespace. Relacionamentos são apenas os "
-        "comprováveis no inventário (selector, `spec.to`, volumes, envFrom, scaleTargetRef).\n\n"
+        "**Diagrama gerado a partir dos manifests YAML do namespace.** "
+        "Relacionamentos são apenas os comprováveis no inventário (selector, "
+        "`spec.to`, volumes, envFrom, scaleTargetRef).\n\n"
         "**Legenda de cores (agrupamentos):**\n"
         "- **Workloads** — fundo azul (`Deployment`, `StatefulSet`, `DaemonSet`, "
         "`DeploymentConfig`, `Job`, `CronJob`, HPA/VPA/PDB).\n"
@@ -510,8 +546,8 @@ def _architecture_legend_kubediagrams() -> str:
         "Services exibem a porta (`nome:8000`).\n"
         "- **Storage** — fundo âmbar (`PVC`, `PV`, `StorageClass`).\n"
         "- **Configuration** — fundo cinza (`ConfigMap`, `Secret`, `ServiceAccount`).\n\n"
-        "**Leitura sugerida:** à esquerda Workloads → Configuration → Storage; "
-        "à direita Networking.\n\n"
+        "**Leitura sugerida:** da esquerda para a direita — "
+        "Workloads → Configuration → Storage → Networking.\n\n"
         "**Tipos de aresta:** `selector` (tracejada), referência direta (sólida), "
         "`controller`/`owner` (pontilhada).\n\n"
         "> Artefatos de Build (`BuildConfig`, `Build`, `ImageStream`, pods `*-build`), "
@@ -524,7 +560,7 @@ def _architecture_legend_kubediagrams() -> str:
 
 
 def _architecture_legend_custom() -> str:
-    return _architecture_legend_kubediagrams()
+    return _architecture_legend()
 
 
 def _architecture_manifest_breakdown(manifests: tuple[Path, ...]) -> str:
@@ -621,11 +657,11 @@ def _namespace_architecture_section(
 
     if image_path is None or not used_kubediagrams:
         return (
-            "> Diagrama de arquitetura indisponível: KubeDiagrams não instalado "
-            "ou falha na renderização.\n"
+            "> Diagrama de arquitetura indisponível: não foi possível gerar a "
+            "visualização a partir dos manifests YAML do inventário.\n"
         )
 
-    legend = _architecture_legend_kubediagrams()
+    legend = _architecture_legend()
     lines = [legend, ""]
     lines.append(f"**Conteúdo do namespace no diagrama:** {_architecture_manifest_breakdown(manifests)}")
     lines.append("")
@@ -636,7 +672,7 @@ def _namespace_architecture_section(
         if len(yaml_sources) > 12:
             lines.append(f"- _… e mais {len(yaml_sources) - 12} arquivo(s)_")
         lines.append("")
-    lines.append(_markdown_image("Arquitetura do namespace", image_path))
+    lines.append(_markdown_architecture_image("Arquitetura do namespace", image_path))
     lines.append("")
     return "\n".join(lines)
 
@@ -1312,6 +1348,11 @@ def _references_section() -> str:
         _md_table(
             ("Referência", "Relevância"),
             list(_SUPPLEMENTARY_BIBLIOGRAPHIC_REFERENCES),
+        ),
+        "### Ferramentas e métodos analíticos\n",
+        _md_table(
+            ("Referência", "Relevância"),
+            list(_TOOLS_AND_ANALYTICS_REFERENCES),
         ),
     ]
     return "\n".join(parts)

@@ -439,7 +439,7 @@ def build_external_dependencies_diagrams(
             FlowchartDataset(
                 title=f"Dependências externas — {wl.name}",
                 question=f"Quais sistemas externos o workload `{wl.name}` utiliza?",
-                direction="TB",
+                direction="LR",
                 nodes=tuple(nodes),
                 edges=tuple(edges),
             )
