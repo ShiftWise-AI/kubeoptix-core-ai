@@ -56,8 +56,7 @@ def render_visualization_block(viz: VisualizationSpec) -> str:
                 "_Diagrama gerado a partir dos manifests YAML listados abaixo. "
                 "Cores: Workloads (azul), Pods (azul-claro), Configuration (cinza), "
                 "Storage (âmbar), Networking (verde). "
-                "Leitura: Workloads → Configuration → Storage à esquerda; "
-                "Networking à direita. "
+                "Leitura horizontal: Workloads → Configuration → Storage → Networking. "
                 "Pods equivalentes são agrupados com o rótulo `nome (N replicas)`. "
                 "Services exibem a porta (`nome:8000`)._"
             )

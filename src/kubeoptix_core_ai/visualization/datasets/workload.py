@@ -140,7 +140,7 @@ def build_workload_diagram(
     return FlowchartDataset(
         title=f"Diagrama de workloads{suffix}",
         question="Quais recursos Kubernetes cada workload utiliza ou expõe?",
-        direction="TB",
+        direction="LR",
         nodes=tuple(nodes),
         edges=tuple(edges),
     )

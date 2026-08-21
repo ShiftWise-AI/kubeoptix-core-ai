@@ -11,9 +11,10 @@ REPORT_IMAGE_DPI = 120
 REPORT_CHART_MAX_WIDTH_PX = CHART_MAX_WIDTH
 REPORT_CHART_MAX_HEIGHT_PX = 420
 
-# Diagramas de arquitetura/comunicação exigem mais área horizontal.
-REPORT_DIAGRAM_MAX_WIDTH_PX = 900
-REPORT_DIAGRAM_MAX_HEIGHT_PX = 620
+# Diagramas horizontais: largura maior que altura para leitura em PDF.
+REPORT_DIAGRAM_MAX_WIDTH_PX = 960
+REPORT_DIAGRAM_MAX_HEIGHT_PX = 540
+REPORT_DIAGRAM_MIN_ASPECT_RATIO = 1.25
 
 EMPTY_CHART_FIGSIZE = (5.0, 2.5)
 COMPOSITION_FIGSIZE = (6.5, 3.75)
@@ -27,6 +28,8 @@ def numeric_figsize_width(label_count: int) -> float:
 
 def flowchart_figsize(x_extent: float, y_extent: float) -> tuple[float, float]:
     """Dimensões dinâmicas para flowcharts matplotlib (fallback/testes)."""
-    width = max(7.0, min(14.0, x_extent * 0.9))
-    height = max(3.5, min(10.0, y_extent + 1.5))
+    width = max(8.0, min(16.0, x_extent * 1.0))
+    height = max(3.0, min(7.0, y_extent + 1.0))
+    if width / height < REPORT_DIAGRAM_MIN_ASPECT_RATIO:
+        height = width / REPORT_DIAGRAM_MIN_ASPECT_RATIO
     return width, height
