@@ -8,7 +8,7 @@ from pathlib import Path
 
 from kubeoptix_core_ai.visualization.models import VisualizationSpec, VisualizationStatus
 
-_MD_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)(\{[^}]*\})?")
+_MD_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)(?:\{[^}]*\})?")
 
 
 def _normalize_image_path(image_relpath: str) -> str:
@@ -24,9 +24,8 @@ def _markdown_image(title: str, image_relpath: str) -> str:
 
 
 def _markdown_architecture_image(title: str, image_relpath: str) -> str:
-    """Imagem de arquitetura em largura total de página (Pandoc/LaTeX)."""
-    alt = title.replace("[", "").replace("]", "")
-    return f"![{alt}]({_normalize_image_path(image_relpath)}){{ width=100% }}"
+    """Referência Markdown padrão; largura de página vem do PNG exportado."""
+    return _markdown_image(title, image_relpath)
 
 
 def embed_markdown_images(content: str, *, markdown_dir: Path) -> str:
@@ -34,7 +33,6 @@ def embed_markdown_images(content: str, *, markdown_dir: Path) -> str:
 
     def _replace(match: re.Match[str]) -> str:
         alt, ref = match.group(1), match.group(2).strip()
-        attrs = match.group(3) or ""
         if ref.startswith(("http://", "https://", "data:")):
             return match.group(0)
         normalized = ref.removeprefix("./")
@@ -42,7 +40,7 @@ def embed_markdown_images(content: str, *, markdown_dir: Path) -> str:
         if not image_path.is_file():
             return match.group(0)
         encoded = base64.standard_b64encode(image_path.read_bytes()).decode("ascii")
-        return f"![{alt}](data:image/png;base64,{encoded}){attrs}"
+        return f"![{alt}](data:image/png;base64,{encoded})"
 
     return _MD_IMAGE_RE.sub(_replace, content)
 
