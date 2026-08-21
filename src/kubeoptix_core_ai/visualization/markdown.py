@@ -7,7 +7,10 @@ import re
 from pathlib import Path
 
 from kubeoptix_core_ai.visualization.models import VisualizationSpec, VisualizationStatus
-from kubeoptix_core_ai.visualization.png.export_config import WIDE_DIAGRAM_VIZ_IDS
+from kubeoptix_core_ai.visualization.png.export_config import (
+    PROPOSED_NAMESPACE_VIZ_PREFIX,
+    WIDE_DIAGRAM_VIZ_IDS,
+)
 
 _MD_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)(?:\{[^}]*\})?")
 _HTML_IMG_RE = re.compile(
@@ -102,7 +105,7 @@ def render_visualization_block(viz: VisualizationSpec) -> str:
             if len(viz.yaml_sources) > 10:
                 lines.append(f"- _… e mais {len(viz.yaml_sources) - 10} arquivo(s)_")
             lines.append("")
-        if viz.id in WIDE_DIAGRAM_VIZ_IDS:
+        if viz.id in WIDE_DIAGRAM_VIZ_IDS or viz.id.startswith(PROPOSED_NAMESPACE_VIZ_PREFIX):
             lines.extend([_markdown_architecture_image(viz.title, viz.image_relpath), ""])
         else:
             lines.extend([_markdown_image(viz.title, viz.image_relpath), ""])

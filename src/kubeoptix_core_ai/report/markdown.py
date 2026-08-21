@@ -21,6 +21,10 @@ from kubeoptix_core_ai.analysis.helpers import (
     pool_cpu_allocatable_millicores,
     pool_memory_allocatable_bytes,
 )
+from kubeoptix_core_ai.analysis.namespace_partition import (
+    MAX_ARCHITECTURE_DIAGRAMS,
+    propose_namespace_partition_from_context,
+)
 from kubeoptix_core_ai.models.finding import AnalysisReport, Finding, Severity
 from kubeoptix_core_ai.models.inventory import (
     ConfigMapSpec,
@@ -41,9 +45,14 @@ from kubeoptix_core_ai.report.finding_groups import (
 from kubeoptix_core_ai.report.pipeline import AssessmentBundle
 from kubeoptix_core_ai.visualization.datasets.architecture import (
     build_namespace_architecture_diagram,
+    build_proposed_namespace_architecture_diagram,
 )
 from kubeoptix_core_ai.visualization.diagram_renderer import DiagramRenderer
-from kubeoptix_core_ai.visualization.kubediagrams.mapping import manifests_for_namespace_architecture
+from kubeoptix_core_ai.visualization.kubediagrams.mapping import (
+    manifests_for_namespace_architecture,
+    manifests_for_proposed_namespace,
+)
+from kubeoptix_core_ai.visualization.png.export_config import PROPOSED_NAMESPACE_VIZ_PREFIX
 from kubeoptix_core_ai.visualization.markdown import (
     _markdown_architecture_image,
     _markdown_image,
@@ -71,6 +80,7 @@ _SECTION_CATEGORIES: dict[str, tuple[str, ...]] = {
     "operators": ("OPER",),
     "workload_node": ("WNODE",),
     "inventory": ("ROUTE", "CONFIG", "LOG"),
+    "architecture": ("ARCH",),
     "anomalies": tuple(_ML_CATEGORIES),
 }
 
@@ -89,6 +99,7 @@ _FINDING_CATEGORY_LEGEND: tuple[tuple[str, str], ...] = (
     ("LOG", "Logs coletados dos pods"),
     ("OPER", "Operadores (OLM/CSV) e atualização de canal"),
     ("EVENT", "Events Kubernetes/OpenShift (Warning)"),
+    ("ARCH", "Arquitetura e proposta de quebra de namespaces"),
     ("MLSTAT", "Sinais estatísticos locais (namespace)"),
     ("MLCOMP", "Comparação estatística entre workloads"),
     ("MLANOM", "Detecção de anomalias estatísticas"),
@@ -642,6 +653,150 @@ def _architecture_manifest_breakdown(manifests: tuple[Path, ...]) -> str:
     )
 
 
+def _render_architecture_image(
+    viz_id: str,
+    manifests: tuple[Path, ...],
+    diagram,
+    diagram_renderer: DiagramRenderer | None,
+) -> tuple[str | None, tuple[str, ...]]:
+    if diagram_renderer is None:
+        return None, ()
+    result = diagram_renderer.render_flowchart(viz_id, manifests, diagram)
+    if result.image_relpath is None or result.engine != "kubediagrams":
+        return None, result.yaml_sources
+    return result.image_relpath, result.yaml_sources
+
+
+def _append_architecture_image_block(
+    lines: list[str],
+    *,
+    title: str,
+    image_path: str | None,
+    manifests: tuple[Path, ...],
+    yaml_sources: tuple[str, ...],
+) -> None:
+    if image_path is None:
+        lines.append(
+            "> Diagrama de arquitetura indisponível: não foi possível gerar a "
+            "visualização a partir dos manifests YAML do inventário.\n"
+        )
+        return
+    lines.append(f"**Conteúdo no diagrama:** {_architecture_manifest_breakdown(manifests)}")
+    lines.append("")
+    if yaml_sources:
+        lines.append("**Manifests YAML utilizados:**")
+        for source in yaml_sources[:12]:
+            lines.append(f"- `{source}`")
+        if len(yaml_sources) > 12:
+            lines.append(f"- _… e mais {len(yaml_sources) - 12} arquivo(s)_")
+        lines.append("")
+    lines.append(_markdown_architecture_image(title, image_path))
+    lines.append("")
+
+
+def _proposed_namespaces_section(
+    bundle: AssessmentBundle,
+    diagram_renderer: DiagramRenderer | None,
+) -> str:
+    partition = propose_namespace_partition_from_context(bundle.context)
+    if not partition.groups:
+        return ""
+
+    rows: list[tuple[str, ...]] = []
+    for group in partition.groups:
+        apps = ", ".join(f"`{name}`" for name in group.app_groups) or "—"
+        workloads = ", ".join(f"`{name}`" for name in group.workload_names)
+        residual = (
+            ", ".join(f"`{name}`" for name in group.outbound_to)
+            if group.outbound_to
+            else "nenhuma evidenciada"
+        )
+        rows.append(
+            (
+                apps,
+                f"`{group.suggested_name}`",
+                str(len(group.workload_names)),
+                workloads,
+                group.role,
+                residual,
+            )
+        )
+
+    if partition.should_split:
+        intro = (
+            f"O namespace `{partition.current_namespace}` concentra "
+            f"**{partition.workload_count} workloads** em "
+            f"**{len(partition.groups)} grupo(s) de aplicação**. "
+            "A tabela sugere um namespace por grupo: aplicações só são unidas "
+            "quando há comunicação comprovável (Service selector, `env`) ou "
+            "dependência dedicada (PVC, Secret/ConfigMap de uso restrito)."
+        )
+    else:
+        intro = (
+            f"O namespace `{partition.current_namespace}` concentra "
+            f"**{partition.workload_count} workloads**. "
+            f"{partition.skip_reason or ''} "
+            "A tabela abaixo mostra o agrupamento de aplicações observado."
+        )
+
+    lines = [
+        intro,
+        "",
+        _md_table(
+            (
+                "Grupo de aplicação",
+                "Namespace sugerido",
+                "Qtd.",
+                "Workloads",
+                "Papel",
+                "Comunicação com outros grupos",
+            ),
+            rows,
+        ),
+        "",
+        "> A comunicação residual passaria a ser entre namespaces e exige "
+        "NetworkPolicy, DNS (`svc.namespace.svc`) e RBAC explícitos. "
+        "Tráfego real (service mesh) não está no dump — validar antes de migrar.\n",
+    ]
+
+    render_diagrams = (
+        partition.should_split and len(partition.groups) <= MAX_ARCHITECTURE_DIAGRAMS
+    )
+    if not render_diagrams:
+        return "\n".join(lines)
+
+    by_name = {wl.name: wl for wl in bundle.context.workloads}
+    for group in partition.groups:
+        selected = tuple(by_name[name] for name in group.workload_names if name in by_name)
+        lines.append(f"#### Arquitetura proposta — `{group.suggested_name}`")
+        lines.append("")
+        lines.append(group.rationale)
+        if group.residual_calls:
+            lines.append("")
+            lines.append("**Chamadas que passariam a ser entre namespaces:**")
+            for call in group.residual_calls[:8]:
+                lines.append(f"- {call}")
+            if len(group.residual_calls) > 8:
+                lines.append(f"- _… e mais {len(group.residual_calls) - 8}_")
+        lines.append("")
+        diagram = build_proposed_namespace_architecture_diagram(bundle, group)
+        manifests = manifests_for_proposed_namespace(selected, bundle)
+        image_path, yaml_sources = _render_architecture_image(
+            f"{PROPOSED_NAMESPACE_VIZ_PREFIX}{group.slug}",
+            manifests,
+            diagram,
+            diagram_renderer,
+        )
+        _append_architecture_image_block(
+            lines,
+            title=f"Arquitetura proposta — {group.suggested_name}",
+            image_path=image_path,
+            manifests=manifests,
+            yaml_sources=yaml_sources,
+        )
+    return "\n".join(lines)
+
+
 def _namespace_architecture_section(
     bundle: AssessmentBundle,
     diagram_renderer: DiagramRenderer | None,
@@ -656,39 +811,21 @@ def _namespace_architecture_section(
             "inventário YAML para representar a arquitetura deste namespace.\n"
         )
 
-    image_path: str | None = None
-    used_kubediagrams = False
-    yaml_sources: tuple[str, ...] = ()
+    image_path, yaml_sources = _render_architecture_image(
+        "namespace_architecture",
+        manifests,
+        diagram,
+        diagram_renderer,
+    )
 
-    if diagram_renderer is not None:
-        result = diagram_renderer.render_flowchart(
-            "namespace_architecture",
-            manifests,
-            diagram,
-        )
-        image_path = result.image_relpath
-        used_kubediagrams = result.engine == "kubediagrams"
-        yaml_sources = result.yaml_sources
-
-    if image_path is None or not used_kubediagrams:
-        return (
-            "> Diagrama de arquitetura indisponível: não foi possível gerar a "
-            "visualização a partir dos manifests YAML do inventário.\n"
-        )
-
-    legend = _architecture_legend()
-    lines = [legend, ""]
-    lines.append(f"**Conteúdo do namespace no diagrama:** {_architecture_manifest_breakdown(manifests)}")
-    lines.append("")
-    if yaml_sources:
-        lines.append("**Manifests YAML utilizados:**")
-        for source in yaml_sources[:12]:
-            lines.append(f"- `{source}`")
-        if len(yaml_sources) > 12:
-            lines.append(f"- _… e mais {len(yaml_sources) - 12} arquivo(s)_")
-        lines.append("")
-    lines.append(_markdown_architecture_image("Arquitetura do namespace", image_path))
-    lines.append("")
+    lines = [_architecture_legend(), ""]
+    _append_architecture_image_block(
+        lines,
+        title="Arquitetura do namespace",
+        image_path=image_path,
+        manifests=manifests,
+        yaml_sources=yaml_sources,
+    )
     return "\n".join(lines)
 
 
@@ -1693,6 +1830,23 @@ class MarkdownReportGenerator:
                 renderers.diagram if renderers is not None else None,
             )
         )
+        redistribution = _proposed_namespaces_section(
+            bundle,
+            renderers.diagram if renderers is not None else None,
+        )
+        if redistribution:
+            sections.append("\n### Redistribuição sugerida do namespace\n")
+            sections.append(redistribution)
+        arch_findings = _findings_by_categories(
+            report.findings, _SECTION_CATEGORIES["architecture"]
+        )
+        if arch_findings:
+            sections.append(
+                _section_findings(
+                    arch_findings,
+                    "Finding de arquitetura / redistribuição de namespace:",
+                )
+            )
         sections.append("\n### Visualizações\n")
         sections.append(render_section_visualizations(visualizations.by_section("namespace_overview")))
 

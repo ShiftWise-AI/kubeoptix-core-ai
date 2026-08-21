@@ -10,6 +10,7 @@ from kubeoptix_core_ai.visualization.chart_theme import CHART_MAX_WIDTH
 LayoutProfile = Literal["chart", "diagram", "architecture"]
 
 NAMESPACE_ARCHITECTURE_VIZ_ID = "namespace_architecture"
+PROPOSED_NAMESPACE_VIZ_PREFIX = "proposed_ns_"
 WORKLOAD_NODE_PLACEMENT_VIZ_ID = "workload_node_placement"
 WIDE_DIAGRAM_VIZ_IDS = frozenset(
     {NAMESPACE_ARCHITECTURE_VIZ_ID, WORKLOAD_NODE_PLACEMENT_VIZ_ID}
@@ -42,7 +43,7 @@ NUMERIC_FIGSIZE_HEIGHT = 3.5
 
 
 def layout_profile_for_viz(viz_id: str) -> LayoutProfile:
-    if viz_id in WIDE_DIAGRAM_VIZ_IDS:
+    if viz_id in WIDE_DIAGRAM_VIZ_IDS or viz_id.startswith(PROPOSED_NAMESPACE_VIZ_PREFIX):
         return "architecture"
     return "diagram"
 

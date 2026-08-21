@@ -128,6 +128,30 @@ def manifests_for_workload_dependencies(
     return collect_paths(idx, *lookups)
 
 
+def manifests_for_proposed_namespace(
+    workloads: tuple[Workload, ...],
+    bundle: AssessmentBundle,
+    index: ManifestIndex | None = None,
+) -> tuple:
+    """Manifests do recorte proposto: workloads, Services, Routes e dependências."""
+    idx = index or manifest_index_for(bundle)
+    paths = manifests_for_workload_group(workloads, bundle, idx)
+    service_names = {
+        svc.name
+        for wl in workloads
+        for svc in services_for_workload(wl, bundle.context.services)
+    }
+    lookups: list[tuple[str, str]] = []
+    for route in bundle.context.routes:
+        if route.target_service and route.target_service in service_names:
+            lookups.append(("route", route.name))
+    for wl in workloads:
+        for pod_name in idx.pods:
+            if pod_name == wl.name or pod_name.startswith(f"{wl.name}-"):
+                lookups.append(("pod", pod_name))
+    return merge_manifest_paths(paths, collect_paths(idx, *lookups))
+
+
 def manifests_for_workload_group(
     workloads: tuple[Workload, ...],
     bundle: AssessmentBundle,

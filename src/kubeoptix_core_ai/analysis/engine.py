@@ -10,6 +10,7 @@ from kubeoptix_core_ai.analysis.cpu import analyze_cpu
 from kubeoptix_core_ai.analysis.events import analyze_events
 from kubeoptix_core_ai.analysis.findings_builder import FindingBuilder
 from kubeoptix_core_ai.analysis.inventory import analyze_inventory
+from kubeoptix_core_ai.analysis.namespace_partition import analyze_namespace_partition
 from kubeoptix_core_ai.analysis.memory import analyze_memory
 from kubeoptix_core_ai.analysis.probes import analyze_probes
 from kubeoptix_core_ai.analysis.qos import analyze_qos
@@ -48,6 +49,7 @@ _DETERMINISTIC_ANALYZERS: tuple[tuple[str, Callable[..., None]], ...] = (
     ("inventário", analyze_inventory),
     ("events", analyze_events),
     ("workload-node", analyze_workload_node),
+    ("arquitetura", analyze_namespace_partition),
 )
 
 
