@@ -40,10 +40,6 @@ nameOverride: ""
 fullnameOverride: ""
 
 service:
-  headless:
-    enabled: true
-    name: core-ai
-    port: 8000
   api:
     enabled: true
     name: core-ai-api

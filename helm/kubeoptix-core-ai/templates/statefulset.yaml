@@ -10,7 +10,9 @@ metadata:
     kubeoptix.core-ai/single-instance: "true"
 spec:
   replicas: {{ include "kubeoptix-core-ai.replicas" . }}
-  serviceName: {{ include "kubeoptix-core-ai.headlessServiceName" . }}
+  {{- $headless := default (dict) .Values.service.headless }}
+  {{- $headlessEnabled := default false $headless.enabled }}
+  serviceName: {{ ternary (include "kubeoptix-core-ai.headlessServiceName" .) (include "kubeoptix-core-ai.apiServiceName" .) $headlessEnabled }}
   selector:
     matchLabels:
       {{- include "kubeoptix-core-ai.selectorLabels" . | nindent 6 }}
