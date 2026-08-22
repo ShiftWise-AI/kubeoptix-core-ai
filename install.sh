@@ -8,6 +8,38 @@ NAMESPACE="shiftwise-ai"
 VALUES_FILES=()
 ENABLE_ORPHAN_CLEANUP="true"
 
+wait_for_imagestream_tag() {
+  local namespace="$1"
+  local bc_name="$2"
+  local timeout_seconds="${3:-300}"
+
+  local output_to
+  output_to="$(oc get buildconfig "${bc_name}" -n "${namespace}" -o jsonpath='{.spec.output.to.name}' 2>/dev/null || true)"
+
+  if [[ -z "${output_to}" ]]; then
+    echo "Aviso: BuildConfig ${bc_name} sem spec.output.to.name; pulando espera de ImageStreamTag." >&2
+    return 0
+  fi
+
+  echo "Aguardando publicação de ImageStreamTag ${output_to} (até ${timeout_seconds}s)..."
+
+  local elapsed=0
+  while [[ ${elapsed} -lt ${timeout_seconds} ]]; do
+    if oc get istag "${output_to}" -n "${namespace}" >/dev/null 2>&1; then
+      echo "ImageStreamTag disponível: ${output_to}"
+      return 0
+    fi
+    sleep 5
+    elapsed=$((elapsed + 5))
+  done
+
+  echo "Tempo esgotado aguardando ImageStreamTag ${output_to}." >&2
+  echo "Diagnóstico rápido:" >&2
+  oc get buildconfig "${bc_name}" -n "${namespace}" -o yaml | tail -30 >&2 || true
+  oc get is,istag -n "${namespace}" | grep -E "${bc_name}|${output_to%%:*}|NAME" >&2 || true
+  return 1
+}
+
 kind_alias() {
   local kind="$1"
   case "${kind}" in
@@ -228,6 +260,10 @@ if oc get buildconfig "${BC_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1; then
     exit 1
   fi
   echo "Build concluído."
+
+  if ! wait_for_imagestream_tag "${NAMESPACE}" "${BC_NAME}" 300; then
+    exit 1
+  fi
 
   if oc get statefulset "${RELEASE}" -n "${NAMESPACE}" >/dev/null 2>&1; then
     echo "Reiniciando StatefulSet para carregar a nova imagem..."

@@ -54,6 +54,8 @@ O projeto usa **Containerfile** (UBI 10). Com `build.enabled=true`, o chart cria
 ./install.sh -f ./my-values.yaml
 ```
 
+Após o `oc start-build --wait`, o script aguarda a publicação da `ImageStreamTag` de saída do BuildConfig antes de reiniciar o StatefulSet, reduzindo falhas de pull com `manifest unknown`.
+
 Para rebuild manual:
 
 ```bash
