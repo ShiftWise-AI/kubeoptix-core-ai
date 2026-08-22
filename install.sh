@@ -40,6 +40,49 @@ wait_for_imagestream_tag() {
   return 1
 }
 
+cleanup_completed_builds() {
+  local namespace="$1"
+  local bc_name="$2"
+
+  local completed_builds
+  completed_builds="$(oc get builds -n "${namespace}" -l "buildconfig=${bc_name}" \
+    -o jsonpath='{range .items[?(@.status.phase=="Complete")]}{.metadata.name}{"\n"}{end}' 2>/dev/null || true)"
+
+  if [[ -z "${completed_builds}" ]]; then
+    echo "Cleanup de builds: nenhum build concluído para remover."
+    return 0
+  fi
+
+  echo "Removendo builds concluídos do BuildConfig ${bc_name}..."
+  while IFS= read -r build_name; do
+    [[ -z "${build_name}" ]] && continue
+    echo "  - ${build_name}"
+    oc delete build "${build_name}" -n "${namespace}" --ignore-not-found=true >/dev/null 2>&1 || true
+  done <<< "${completed_builds}"
+}
+
+cleanup_helm_release_secrets() {
+  local namespace="$1"
+  local release="$2"
+  local pattern="sh.helm.release.v1.${release}."
+
+  local helm_secrets
+  helm_secrets="$(oc get secrets -n "${namespace}" --no-headers -o custom-columns=NAME:.metadata.name 2>/dev/null \
+    | grep -F "${pattern}" || true)"
+
+  if [[ -z "${helm_secrets}" ]]; then
+    echo "Cleanup Helm: nenhum secret de histórico encontrado para ${release}."
+    return 0
+  fi
+
+  echo "Removendo secrets de histórico Helm do release ${release}..."
+  while IFS= read -r secret_name; do
+    [[ -z "${secret_name}" ]] && continue
+    echo "  - ${secret_name}"
+    oc delete secret "${secret_name}" -n "${namespace}" --ignore-not-found=true >/dev/null 2>&1 || true
+  done <<< "${helm_secrets}"
+}
+
 kind_alias() {
   local kind="$1"
   case "${kind}" in
@@ -303,5 +346,13 @@ if [[ "${ENABLE_ORPHAN_CLEANUP}" == "true" ]]; then
 else
   echo "Cleanup pós-instalação desabilitado por parâmetro (-x)."
 fi
+
+if oc get buildconfig "${BC_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1; then
+  echo "Executando cleanup de builds concluídos..."
+  cleanup_completed_builds "${NAMESPACE}" "${BC_NAME}"
+fi
+
+echo "Executando cleanup dos secrets de histórico Helm..."
+cleanup_helm_release_secrets "${NAMESPACE}" "${RELEASE}"
 
 echo "Instalação concluída com sucesso."

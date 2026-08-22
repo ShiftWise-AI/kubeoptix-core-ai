@@ -40,7 +40,9 @@ helm template kubeoptix-core-ai ./helm/kubeoptix-core-ai -f ./my-values.yaml
 
 O `install.sh` instala sempre no namespace `shiftwise-ai` e dispara `oc start-build` quando o chart cria um BuildConfig.
 Após a instalação, o script também executa cleanup de recursos órfãos do mesmo release (ex.: ConfigMaps, Secrets, certificados e rotas que ficaram fora do manifest atual).
-Para desabilitar esse comportamento em uma execução específica, use `-x`:
+Após uma instalação bem-sucedida, o script remove automaticamente builds concluídos (`status=Complete`) do BuildConfig do release.
+Após o término, o script também remove os secrets de histórico Helm (`sh.helm.release.v1.<release>.*`) do namespace.
+Para desabilitar apenas o cleanup de recursos órfãos em uma execução específica, use `-x`:
 
 ```bash
 ./install.sh -f ./my-values.yaml -x
