@@ -55,7 +55,8 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{- define "kubeoptix-core-ai.headlessServiceName" -}}
-{{- default (include "kubeoptix-core-ai.fullname" .) .Values.service.headless.name }}
+{{- $headless := default (dict) .Values.service.headless -}}
+{{- default (include "kubeoptix-core-ai.fullname" .) $headless.name }}
 {{- end }}
 
 {{- define "kubeoptix-core-ai.apiServiceName" -}}

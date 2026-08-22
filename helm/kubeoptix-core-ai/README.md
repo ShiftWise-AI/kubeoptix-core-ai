@@ -8,7 +8,6 @@ Chart Helm para instalar o KubeOptix Core AI em OpenShift como **StatefulSet sin
 |---------|--------------|
 | Workload | `StatefulSet`, réplicas via `scalePolicy.maxReplicas` |
 | Service API | `ClusterIP` (`service.api`) |
-| Service headless | `clusterIP: None` (`service.headless`) |
 | Exposição externa | Nenhuma (sem Route/Ingress) |
 | Persistência | PVC existente `harvester-app-data` em `/app/data` |
 | Build | `BuildConfig` + `ImageStream` quando `build.enabled=true` |
@@ -40,6 +39,12 @@ helm template kubeoptix-core-ai ./helm/kubeoptix-core-ai -f ./my-values.yaml
 ```
 
 O `install.sh` instala sempre no namespace `shiftwise-ai` e dispara `oc start-build` quando o chart cria um BuildConfig.
+Após a instalação, o script também executa cleanup de recursos órfãos do mesmo release (ex.: ConfigMaps, Secrets, certificados e rotas que ficaram fora do manifest atual).
+Para desabilitar esse comportamento em uma execução específica, use `-x`:
+
+```bash
+./install.sh -f ./my-values.yaml -x
+```
 
 ## Build da imagem (OpenShift)
 

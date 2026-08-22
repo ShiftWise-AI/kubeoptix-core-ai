@@ -6,15 +6,121 @@ CHART="${ROOT}/helm/kubeoptix-core-ai"
 RELEASE="kubeoptix-core-ai"
 NAMESPACE="shiftwise-ai"
 VALUES_FILES=()
+ENABLE_ORPHAN_CLEANUP="true"
+
+kind_alias() {
+  local kind="$1"
+  case "${kind}" in
+    BuildConfig) echo "buildconfig" ;;
+    ImageStream) echo "imagestream" ;;
+    StatefulSet) echo "statefulset" ;;
+    Service) echo "service" ;;
+    ConfigMap) echo "configmap" ;;
+    Secret) echo "secret" ;;
+    Route) echo "route.route.openshift.io" ;;
+    Certificate) echo "certificate.cert-manager.io" ;;
+    Issuer) echo "issuer.cert-manager.io" ;;
+    *)
+      # Helm manifest kinds are CamelCase; convert to lowercase for oc resource output.
+      echo "${kind}" | tr '[:upper:]' '[:lower:]'
+      ;;
+  esac
+}
+
+normalize_resource_ref() {
+  local resource_ref="$1"
+  local kind_part="${resource_ref%/*}"
+  local name_part="${resource_ref##*/}"
+  kind_part="${kind_part%%.*}"
+  echo "${kind_part}/${name_part}"
+}
+
+cleanup_orphan_resources() {
+  local release="$1"
+  local namespace="$2"
+
+  local expected_file
+  local managed_file
+  expected_file="$(mktemp)"
+  managed_file="$(mktemp)"
+
+  trap 'rm -f "${expected_file}" "${managed_file}"' RETURN
+
+  if ! helm get manifest "${release}" -n "${namespace}" >/dev/null 2>&1; then
+    echo "Aviso: não foi possível obter o manifest do release para cleanup de órfãos." >&2
+    return 0
+  fi
+
+  helm get manifest "${release}" -n "${namespace}" \
+    | awk '
+      /^kind:[[:space:]]+/ { kind=$2 }
+      /^metadata:[[:space:]]*$/ { inmeta=1; next }
+      inmeta && /^[[:space:]]+name:[[:space:]]+/ {
+        name=$2
+        gsub(/"/, "", name)
+        print kind "/" name
+        inmeta=0
+      }
+      /^---[[:space:]]*$/ { inmeta=0; kind="" }
+    ' \
+    | while IFS='/' read -r raw_kind raw_name; do
+        [[ -z "${raw_kind}" || -z "${raw_name}" ]] && continue
+        printf '%s/%s\n' "$(kind_alias "${raw_kind}")" "${raw_name}"
+      done \
+    | while IFS= read -r expected_resource; do
+        normalize_resource_ref "${expected_resource}"
+      done \
+    | sort -u >"${expected_file}"
+
+  local cleanup_kinds=(
+    "configmap"
+    "secret"
+    "service"
+    "route.route.openshift.io"
+    "certificate.cert-manager.io"
+    "issuer.cert-manager.io"
+    "buildconfig"
+    "imagestream"
+  )
+
+  : >"${managed_file}"
+  for kind in "${cleanup_kinds[@]}"; do
+    oc get "${kind}" -n "${namespace}" \
+      -l "app.kubernetes.io/instance=${release}" \
+      -o name --ignore-not-found 2>/dev/null >>"${managed_file}" || true
+  done
+
+  if [[ ! -s "${managed_file}" ]]; then
+    echo "Cleanup pós-instalação: nenhum recurso gerenciado encontrado para avaliar órfãos."
+    return 0
+  fi
+
+  sort -u -o "${managed_file}" "${managed_file}"
+
+  local deleted_any="false"
+  while IFS= read -r resource; do
+    [[ -z "${resource}" ]] && continue
+    if ! grep -Fxq "$(normalize_resource_ref "${resource}")" "${expected_file}"; then
+      echo "Removendo órfão: ${resource}"
+      oc delete -n "${namespace}" "${resource}" --ignore-not-found=true >/dev/null 2>&1 || true
+      deleted_any="true"
+    fi
+  done <"${managed_file}"
+
+  if [[ "${deleted_any}" == "false" ]]; then
+    echo "Cleanup pós-instalação: nenhum órfão encontrado."
+  fi
+}
 
 usage() {
   cat <<'EOF'
 Uso:
-  install.sh -f <values.example.yaml> [-r <release>]
+  install.sh -f <values.example.yaml> [-r <release>] [-x]
 
 Options:
   -f  Arquivo de values do Helm (obrigatório; pode ser repetido)
   -r  Nome do release Helm (padrão: kubeoptix-core-ai)
+  -x  Pular cleanup pós-instalação de recursos órfãos
   -h  Ajuda
 
 Namespace de instalação: shiftwise-ai (fixo)
@@ -24,10 +130,11 @@ Exemplo:
 EOF
 }
 
-while getopts ":f:r:h" opt; do
+while getopts ":f:r:xh" opt; do
   case "${opt}" in
     f) VALUES_FILES+=("${OPTARG}") ;;
     r) RELEASE="${OPTARG}" ;;
+    x) ENABLE_ORPHAN_CLEANUP="false" ;;
     h)
       usage
       exit 0
@@ -151,6 +258,14 @@ if ! oc wait --for=condition=Ready "pod/${POD_NAME}" -n "${NAMESPACE}" --timeout
   echo "Pod ainda não está Ready. Eventos recentes:" >&2
   oc describe pod "${POD_NAME}" -n "${NAMESPACE}" | tail -30
   exit 1
+fi
+
+echo
+if [[ "${ENABLE_ORPHAN_CLEANUP}" == "true" ]]; then
+  echo "Executando cleanup pós-instalação de recursos órfãos do release..."
+  cleanup_orphan_resources "${RELEASE}" "${NAMESPACE}"
+else
+  echo "Cleanup pós-instalação desabilitado por parâmetro (-x)."
 fi
 
 echo "Instalação concluída com sucesso."

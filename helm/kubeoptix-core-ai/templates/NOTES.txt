@@ -6,6 +6,8 @@ IMPORTANTE: esta aplicação é single-instance. Não escale réplicas nem confi
 Release:   {{ .Release.Name }}
 Namespace: {{ include "kubeoptix-core-ai.namespace" . }}
 Imagem:    {{ include "kubeoptix-core-ai.image" . }}
+{{- $headless := default (dict) .Values.service.headless }}
+{{- $headlessEnabled := default false $headless.enabled }}
 {{- if .Values.service.api.enabled }}
 
 Service API: {{ include "kubeoptix-core-ai.apiServiceName" . }} ({{ .Values.service.api.type }}, porta {{ .Values.service.api.port }})
@@ -17,9 +19,9 @@ Não há Route/Ingress exposto por este chart. Para testar localmente:
   kubectl port-forward svc/{{ include "kubeoptix-core-ai.apiServiceName" . }} 8000:{{ .Values.service.api.port }}
   curl http://127.0.0.1:8000/health/live
 {{- end }}
-{{- if .Values.service.headless.enabled }}
+{{- if $headlessEnabled }}
 
-Service headless: {{ include "kubeoptix-core-ai.headlessServiceName" . }} (porta {{ .Values.service.headless.port }})
+Service headless: {{ include "kubeoptix-core-ai.headlessServiceName" . }} (porta {{ default .Values.service.api.port $headless.port }})
 {{- end }}
 {{- if .Values.build.enabled }}
 
