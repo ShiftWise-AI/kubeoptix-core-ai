@@ -68,6 +68,7 @@ class NamespacePaths:
     pvc_files: tuple[Path, ...] = ()
     csv_files: tuple[Path, ...] = ()
     packagemanifest_files: tuple[Path, ...] = ()
+    event_files: tuple[Path, ...] = ()
     pod_log_files: tuple[Path, ...] = ()
 
     @property
@@ -95,6 +96,7 @@ class NamespacePaths:
             + len(self.configmap_files)
             + len(self.csv_files)
             + len(self.packagemanifest_files)
+            + len(self.event_files)
             + len(self.pod_log_files)
         )
 
@@ -287,6 +289,8 @@ def discover_namespace(namespace_root: Path) -> NamespacePaths:
         tuple(sorted(pm_dir.glob("*.yaml"))) if pm_dir.is_dir() else ()
     )
 
+    event_files = _collect_event_files(namespace_root)
+
     return NamespacePaths(
         namespace=namespace,
         root=namespace_root,
@@ -303,6 +307,7 @@ def discover_namespace(namespace_root: Path) -> NamespacePaths:
         pvc_files=pvc_files,
         csv_files=csv_files,
         packagemanifest_files=packagemanifest_files,
+        event_files=event_files,
         pod_log_files=pod_log_files,
     )
 
@@ -322,6 +327,18 @@ def _collect_pod_metrics_files(namespace_root: Path) -> tuple[Path, ...]:
 def _collect_pvc_files(namespace_root: Path) -> tuple[Path, ...]:
     pvc_dir = namespace_root / "resources" / "persistentvolumeclaims"
     return tuple(sorted(pvc_dir.glob("*.yaml"))) if pvc_dir.is_dir() else ()
+
+
+def _collect_event_files(namespace_root: Path) -> tuple[Path, ...]:
+    """Coleta Events; `resources/events/` tem precedência sobre `events.events.k8s.io/`."""
+    seen: dict[str, Path] = {}
+    for subdir in ("events", "events.events.k8s.io"):
+        event_dir = namespace_root / "resources" / subdir
+        if not event_dir.is_dir():
+            continue
+        for path in sorted(event_dir.glob("*.yaml")):
+            seen.setdefault(path.stem, path)
+    return tuple(seen[stem] for stem in sorted(seen))
 
 
 def _collect_pod_log_files(namespace_root: Path) -> tuple[Path, ...]:

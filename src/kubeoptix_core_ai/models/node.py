@@ -34,7 +34,19 @@ class WorkNode(BaseModel):
     conditions: tuple[NodeCondition, ...] = ()
     taints: tuple[dict, ...] = ()
     ready: bool | None = None
+    kubelet_version: str | None = None
+    os_image: str | None = None
+    container_runtime: str | None = None
+    mco_state: str | None = None
+    mco_current_config: str | None = None
+    mco_desired_config: str | None = None
     source: DataSourceRef
+
+    @property
+    def mco_synced(self) -> bool | None:
+        if not self.mco_current_config or not self.mco_desired_config:
+            return None
+        return self.mco_current_config == self.mco_desired_config
 
 
 class WorkNodeBundle(BaseModel):

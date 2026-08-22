@@ -37,21 +37,25 @@ Ele é referência estrutural e metodológica, não fonte de dados para outros n
 
 ## 12. Análise de Storage
 
-## 13. Correlação Workload × Worknode
+## 13. Events
 
-## 14. Anomalias Identificadas
+## 14. Atualização de Operators (OLM)
 
-## 15. Findings
+## 15. Correlação Workload × Worknode
 
-## 16. Oportunidades de Otimização
+## 16. Anomalias Identificadas
 
-## 17. Riscos
+## 17. Findings
 
-## 18. Recomendações
+## 18. Oportunidades de Otimização
 
-## 19. Conclusão
+## 19. Riscos
 
-## 20. Limitações da Análise
+## 20. Recomendações
+
+## 21. Conclusão
+
+## 22. Limitações da Análise
 ```
 
 A estrutura pode ser adaptada após inspeção do relatório de referência.

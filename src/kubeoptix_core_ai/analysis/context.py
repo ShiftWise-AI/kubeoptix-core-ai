@@ -49,6 +49,10 @@ class AnalysisContext:
         return self.bundle.operators
 
     @property
+    def events(self):
+        return self.bundle.events
+
+    @property
     def pod_logs(self):
         return self.bundle.pod_logs
 

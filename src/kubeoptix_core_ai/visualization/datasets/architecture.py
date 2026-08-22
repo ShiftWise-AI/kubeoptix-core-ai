@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import re
 
+from kubeoptix_core_ai.analysis.namespace_partition import ProposedNamespace
+from kubeoptix_core_ai.analysis.workload_refs import (
+    extract_cross_namespace_service_refs,
+    extract_database_refs,
+    extract_service_calls,
+)
 from kubeoptix_core_ai.models.inventory import RouteSpec, ServiceSpec
 from kubeoptix_core_ai.models.workload import Workload
 from kubeoptix_core_ai.report.pipeline import AssessmentBundle
@@ -26,25 +32,6 @@ _SCOPE_LABELS = {
     "cross_namespace": "entre namespaces",
     "external": "externo",
 }
-
-_DATABASE_SECRET_MARKERS = (
-    "database",
-    "db-",
-    "-db",
-    "jdbc",
-    "postgres",
-    "oracle",
-    "mysql",
-    "mongo",
-    "mariadb",
-    "sql",
-)
-
-_SERVICE_REF_PATTERNS = (
-    re.compile(r"https?://([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)(?::|/|$)", re.I),
-    re.compile(r"\b([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\.[a-z0-9][a-z0-9.-]*\.svc(?:\.cluster\.local)?\b", re.I),
-    re.compile(r"\b([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)\.svc(?:\.cluster\.local)?\b", re.I),
-)
 
 
 def _edge_label(scope: str | None, detail: str | None) -> str | None:
@@ -155,122 +142,13 @@ def _add_edge(
     )
 
 
-def _load_deployment_document(workload: Workload) -> dict | None:
-    from pathlib import Path
-
-    from kubeoptix_core_ai.parsers.base import load_yaml_file
-
-    try:
-        return load_yaml_file(Path(workload.source.file_path))
-    except OSError:
-        return None
-
-
-def _container_specs(workload: Workload) -> list[dict]:
-    document = _load_deployment_document(workload)
-    if not document:
-        return []
-    template_spec = (
-        (document.get("spec") or {}).get("template") or {}
-    ).get("spec") or {}
-    containers = template_spec.get("containers") or []
-    return [c for c in containers if isinstance(c, dict)]
-
-
-def _is_database_secret_name(name: str) -> bool:
-    lower = name.lower()
-    return any(marker in lower for marker in _DATABASE_SECRET_MARKERS)
-
-
-def _extract_database_refs(
-    workload: Workload,
-) -> tuple[tuple[str, str], ...]:
-    """Referências a banco de dados via nome de Secret no YAML (sem ler conteúdo)."""
-    refs: list[tuple[str, str]] = []
-    for c_idx, container in enumerate(_container_specs(workload)):
-        for ef_idx, env_from in enumerate(container.get("envFrom") or []):
-            if not isinstance(env_from, dict):
-                continue
-            secret_ref = env_from.get("secretRef")
-            if not isinstance(secret_ref, dict):
-                continue
-            name = secret_ref.get("name")
-            if not name or not _is_database_secret_name(str(name)):
-                continue
-            field_path = f"spec.template.spec.containers[{c_idx}].envFrom[{ef_idx}].secretRef"
-            refs.append((str(name), field_path))
-        for e_idx, env in enumerate(container.get("env") or []):
-            if not isinstance(env, dict):
-                continue
-            value = env.get("value")
-            if not isinstance(value, str):
-                continue
-            if "jdbc:" in value.lower() or "database" in value.lower():
-                refs.append((value[:48], f"spec.template.spec.containers[{c_idx}].env[{e_idx}].value"))
-    return tuple(refs)
-
-
-def _extract_service_calls(
-    workload: Workload,
-    service_names: set[str],
-) -> tuple[tuple[str, str, str], ...]:
-    """Chamadas a Services internos evidenciadas em variáveis de ambiente."""
-    calls: list[tuple[str, str, str]] = []
-    seen: set[tuple[str, str]] = set()
-
-    for c_idx, container in enumerate(_container_specs(workload)):
-        for e_idx, env in enumerate(container.get("env") or []):
-            if not isinstance(env, dict):
-                continue
-            value = env.get("value")
-            if not isinstance(value, str):
-                continue
-            env_name = str(env.get("name", ""))
-            field_path = f"spec.template.spec.containers[{c_idx}].env[{e_idx}].value"
-            for pattern in _SERVICE_REF_PATTERNS:
-                for match in pattern.finditer(value):
-                    service_name = match.group(1).lower()
-                    if service_name not in service_names:
-                        continue
-                    if service_name == workload.name.lower():
-                        continue
-                    key = (service_name, field_path)
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    calls.append((service_name, field_path, env_name))
-    return tuple(calls)
-
-
-def _extract_cross_namespace_service_refs(
-    workload: Workload,
-) -> tuple[tuple[str, str, str], ...]:
-    """Services em outros namespaces referenciados explicitamente no YAML."""
-    refs: list[tuple[str, str, str]] = []
-    for c_idx, container in enumerate(_container_specs(workload)):
-        for e_idx, env in enumerate(container.get("env") or []):
-            if not isinstance(env, dict):
-                continue
-            value_from = env.get("valueFrom")
-            if not isinstance(value_from, dict):
-                continue
-            for ref_key in ("configMapKeyRef", "secretKeyRef"):
-                if ref_key not in value_from or not isinstance(value_from[ref_key], dict):
-                    continue
-                ref = value_from[ref_key]
-                other_ns = ref.get("namespace")
-                name = ref.get("name")
-                if not other_ns or not name or other_ns == workload.namespace:
-                    continue
-                if not _is_database_secret_name(str(name)):
-                    continue
-                field_path = f"spec.template.spec.containers[{c_idx}].env[{e_idx}].valueFrom.{ref_key}"
-                refs.append((str(other_ns), str(name), field_path))
-    return tuple(refs)
-
-
 def build_namespace_architecture_diagram(
     bundle: AssessmentBundle,
+    *,
+    workloads: tuple[Workload, ...] | None = None,
+    title: str | None = None,
+    current_subgraph_title: str | None = None,
+    question: str | None = None,
 ) -> FlowchartDataset | None:
     """
     Diagrama simplificado de comunicação: Pods, Services, Routes, bancos e externos.
@@ -279,9 +157,12 @@ def build_namespace_architecture_diagram(
     comprováveis nos YAMLs estáticos do inventário.
     """
     namespace = bundle.analysis.namespace
-    workloads = bundle.context.workloads
+    all_workloads = bundle.context.workloads
+    focus = workloads if workloads is not None else all_workloads
+    focus_names = {wl.name for wl in focus}
     services = bundle.context.services
     routes = bundle.context.routes
+    is_subset = workloads is not None and focus_names != {wl.name for wl in all_workloads}
 
     nodes: dict[str, DiagramNode] = {}
     edges: list[DiagramEdge] = []
@@ -291,6 +172,11 @@ def build_namespace_architecture_diagram(
 
     service_map = {svc.name: svc for svc in services}
     service_names = set(service_map)
+    in_group_services = {
+        svc.name
+        for svc in services
+        if any(wl.name in focus_names for wl in workloads_for_service(svc, all_workloads))
+    }
     database_nodes: dict[str, str] = {}
 
     def _ensure_pod(wl: Workload) -> str:
@@ -298,14 +184,22 @@ def build_namespace_architecture_diagram(
         _ensure_node(_pod_node(wl))
         return pod_id
 
-    def _ensure_service(svc: ServiceSpec) -> str:
+    def _ensure_service(svc: ServiceSpec, *, subgraph: str | None = None) -> str:
         svc_id = f"svc_{svc.name}"
-        _ensure_node(_service_node(svc))
+        node = _service_node(svc)
+        if subgraph is not None:
+            node = node.model_copy(update={"subgraph": subgraph})
+        _ensure_node(node)
         return svc_id
 
     # Service → Pod (selector)
     for svc in services:
-        for wl in workloads_for_service(svc, workloads):
+        selected = [
+            wl for wl in workloads_for_service(svc, all_workloads) if wl.name in focus_names
+        ]
+        if not selected:
+            continue
+        for wl in selected:
             _add_edge(
                 edges,
                 source_id=_ensure_service(svc),
@@ -324,6 +218,8 @@ def build_namespace_architecture_diagram(
     # Externo → Route → Service
     for route in routes:
         if not route.target_service:
+            continue
+        if is_subset and route.target_service not in in_group_services:
             continue
 
         host = route.host or route.name
@@ -380,6 +276,8 @@ def build_namespace_architecture_diagram(
     for svc in services:
         if not svc.external_name:
             continue
+        if is_subset and svc.name not in in_group_services:
+            continue
         ext_id = f"ext_name_{svc.name}"
         _ensure_node(
             _external_node(
@@ -398,23 +296,26 @@ def build_namespace_architecture_diagram(
             evidence=(from_source(svc.source, field_path="spec.externalName"),),
         )
 
-    for wl in workloads:
+    for wl in focus:
         # Pod → Service interno (variáveis de ambiente)
-        for service_name, field_path, env_name in _extract_service_calls(wl, service_names):
+        for service_name, field_path, env_name in extract_service_calls(wl, service_names):
             svc = service_map[service_name]
             detail = f"env {env_name}" if env_name else "env"
+            outside = is_subset and service_name not in in_group_services
+            subgraph = _SUBGRAPH_OTHER if outside else None
+            scope = "cross_namespace" if outside else "internal"
             _add_edge(
                 edges,
                 source_id=_ensure_pod(wl),
-                target_id=_ensure_service(svc),
+                target_id=_ensure_service(svc, subgraph=subgraph),
                 edge_type="http_call",
-                scope="internal",
+                scope=scope,
                 label=detail,
                 evidence=(from_source(wl.source, field_path=field_path),),
             )
 
         # Pod → Banco de dados (credencial nomeada no YAML)
-        for db_hint, field_path in _extract_database_refs(wl):
+        for db_hint, field_path in extract_database_refs(wl):
             db_id = database_nodes.get(db_hint)
             if db_id is None:
                 safe = re.sub(r"[^a-zA-Z0-9_]", "_", db_hint)[:40]
@@ -443,7 +344,7 @@ def build_namespace_architecture_diagram(
             )
 
         # Pod → recurso em outro namespace (somente DB evidenciado)
-        for other_ns, name, field_path in _extract_cross_namespace_service_refs(wl):
+        for other_ns, name, field_path in extract_cross_namespace_service_refs(wl):
             other_id = f"other_db_{other_ns}_{name}".replace("-", "_")
             _ensure_node(
                 _other_namespace_node(
@@ -475,17 +376,40 @@ def build_namespace_architecture_diagram(
     connected_ids = {e.source_id for e in edges} | {e.target_id for e in edges}
     nodes = {node_id: node for node_id, node in nodes.items() if node_id in connected_ids}
 
+    current_title = current_subgraph_title or f"Namespace atual ({namespace})"
     subgraphs = (
-        FlowchartSubgraph(id=_SUBGRAPH_CURRENT, title=f"Namespace atual ({namespace})"),
+        FlowchartSubgraph(id=_SUBGRAPH_CURRENT, title=current_title),
         FlowchartSubgraph(id=_SUBGRAPH_OTHER, title="Outros namespaces"),
         FlowchartSubgraph(id=_SUBGRAPH_EXTERNAL, title="Fora do cluster"),
     )
 
     return FlowchartDataset(
-        title="Arquitetura do namespace",
-        question="Como Pods, Services, Routes e dependências externas se comunicam?",
+        title=title or "Arquitetura do namespace",
+        question=question
+        or "Como Pods, Services, Routes e dependências externas se comunicam?",
         direction="LR",
         nodes=tuple(nodes.values()),
         edges=tuple(edges),
         subgraphs=subgraphs,
+    )
+
+
+def build_proposed_namespace_architecture_diagram(
+    bundle: AssessmentBundle,
+    proposal: ProposedNamespace,
+) -> FlowchartDataset | None:
+    """Arquitetura do recorte de workloads proposto como namespace distinto."""
+    selected = tuple(
+        wl for wl in bundle.context.workloads if wl.name in set(proposal.workload_names)
+    )
+    if not selected:
+        return None
+    return build_namespace_architecture_diagram(
+        bundle,
+        workloads=selected,
+        title=f"Arquitetura proposta — `{proposal.suggested_name}`",
+        current_subgraph_title=f"Namespace proposto ({proposal.suggested_name})",
+        question=(
+            "Como ficaria a arquitetura deste recorte após a quebra do namespace?"
+        ),
     )

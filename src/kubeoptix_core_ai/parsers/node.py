@@ -11,15 +11,21 @@ from kubeoptix_core_ai.normalize.quantities import parse_cpu_quantity, parse_mem
 from kubeoptix_core_ai.parsers.base import load_yaml_file
 
 
+_ROLE_LABELS: tuple[tuple[str, str], ...] = (
+    ("node-role.kubernetes.io/router", "router"),
+    ("node-role.kubernetes.io/3scale", "3scale"),
+    ("node-role.kubernetes.io/app", "app"),
+    ("node-role.kubernetes.io/storage", "storage"),
+    ("node-role.kubernetes.io/infra", "infra"),
+)
+
+
 def _infer_role(labels: dict[str, str]) -> str | None:
     if labels.get("type"):
         return labels["type"]
-    if labels.get("node-role.kubernetes.io/router") is not None:
-        return "router"
-    if labels.get("node-role.kubernetes.io/storage") is not None:
-        return "storage"
-    if labels.get("node-role.kubernetes.io/infra") is not None:
-        return "infra"
+    for label, role in _ROLE_LABELS:
+        if label in labels:
+            return role
     return None
 
 
@@ -97,6 +103,14 @@ def parse_node(file_path: Path) -> WorkNode:
     taints_raw = spec.get("taints") or []
     taints = tuple(t for t in taints_raw if isinstance(t, dict))
 
+    node_info = status.get("nodeInfo") or {}
+    annotations_raw = metadata.get("annotations") or {}
+    annotations = (
+        {str(k): str(v) for k, v in annotations_raw.items()}
+        if isinstance(annotations_raw, dict)
+        else {}
+    )
+
     return WorkNode(
         name=name,
         labels=labels,
@@ -112,5 +126,25 @@ def parse_node(file_path: Path) -> WorkNode:
         conditions=tuple(conditions),
         taints=taints,
         ready=ready,
+        kubelet_version=(
+            str(node_info["kubeletVersion"])
+            if node_info.get("kubeletVersion") is not None
+            else None
+        ),
+        os_image=(
+            str(node_info["osImage"]) if node_info.get("osImage") is not None else None
+        ),
+        container_runtime=(
+            str(node_info["containerRuntimeVersion"])
+            if node_info.get("containerRuntimeVersion") is not None
+            else None
+        ),
+        mco_state=annotations.get("machineconfiguration.openshift.io/state"),
+        mco_current_config=annotations.get(
+            "machineconfiguration.openshift.io/currentConfig"
+        ),
+        mco_desired_config=annotations.get(
+            "machineconfiguration.openshift.io/desiredConfig"
+        ),
         source=source,
     )

@@ -1,31 +1,32 @@
 # Configuração visual KubeDiagrams (formato nativo 0.8.0).
 # Agrupa por categoria de inventário (não por labels Helm/app) e define
 # recursos OpenShift com relações extraídas apenas dos campos YAML.
+# Paleta D — corporativa Red Hat (vermelho, preto, cinzas, navy).
 
 edges:
   REFERENCE:
-    color: "#1F4E79"
+    color: "#002F5D"
     style: solid
   REFERENCE-UP:
-    color: "#1F4E79"
+    color: "#002F5D"
     style: solid
     direction: up
   SELECTOR:
-    color: "#1D8348"
+    color: "#0066CC"
     style: dashed
   SELECTOR-UP:
-    color: "#1D8348"
+    color: "#0066CC"
     style: dashed
     direction: up
   OWNER:
-    color: "#5D6D7E"
+    color: "#6A6E73"
     style: dotted
   CONTROLLED_BY:
     xlabel: controller
-    color: "#5D6D7E"
+    color: "#6A6E73"
     style: dotted
   COMMUNICATION:
-    color: "#A04000"
+    color: "#C9190B"
     style: solid
 
 clusters:
@@ -55,42 +56,50 @@ clusters:
     title: "{}"
     recommended: true
     graph_attr:
-      bgcolor: "#D4E6F1"
-      pencolor: "#1F4E79"
+      bgcolor: "#F5D0CD"
+      pencolor: "#C9190B"
       style: rounded
-      fontcolor: "#1F4E79"
+      fontcolor: "#C9190B"
   - label: kubeoptix.io/cat-pods
     title: "{}"
     recommended: true
     graph_attr:
-      bgcolor: "#AED6F1"
-      pencolor: "#1A5276"
+      bgcolor: "#E8E8E8"
+      pencolor: "#151515"
       style: rounded
-      fontcolor: "#1A5276"
+      fontcolor: "#151515"
   - label: kubeoptix.io/cat-config
     title: "{}"
     recommended: true
     graph_attr:
-      bgcolor: "#E5E8E8"
-      pencolor: "#566573"
+      bgcolor: "#F0F0F0"
+      pencolor: "#4D4D4D"
       style: rounded
-      fontcolor: "#566573"
+      fontcolor: "#4D4D4D"
   - label: kubeoptix.io/cat-storage
     title: "{}"
     recommended: true
     graph_attr:
-      bgcolor: "#FDEBD0"
-      pencolor: "#9A7D0A"
+      bgcolor: "#D6E4F0"
+      pencolor: "#002F5D"
       style: rounded
-      fontcolor: "#9A7D0A"
+      fontcolor: "#002F5D"
   - label: kubeoptix.io/cat-networking
     title: "{}"
     recommended: true
     graph_attr:
-      bgcolor: "#D5F5E3"
-      pencolor: "#196F3D"
+      bgcolor: "#D2D2D2"
+      pencolor: "#6A6E73"
       style: rounded
-      fontcolor: "#196F3D"
+      fontcolor: "#6A6E73"
+  - label: kubeoptix.io/cat-nodes
+    title: "{}"
+    recommended: true
+    graph_attr:
+      bgcolor: "#F2C7C3"
+      pencolor: "#7D1007"
+      style: rounded
+      fontcolor: "#7D1007"
 
 nodes:
   Endpoints/v1:
@@ -279,11 +288,23 @@ nodes:
       edges.add_wait_for_services("spec.initContainers")
       edges.add_networks("metadata.annotations")
       edges.add_priority_class("spec.priorityClassName")
+      if query_path(resource, "spec.nodeName"):
+          edges.add_edge_to(
+              "spec.nodeName",
+              ".",
+              None,
+              "Node",
+              "v1",
+              "REFERENCE",
+          )
       for idx, edge in enumerate(edges):
           if isinstance(edge, (list, tuple)) and len(edge) == 2:
               rid = str(edge[0])
               if "/ServiceAccount/" in rid or "/ConfigMap/" in rid or "/Secret/" in rid:
                   edges[idx] = [edge[0], "REFERENCE-UP"]
+  Node/v1:
+    scope: Cluster
+    diagram_node_classname: diagrams.k8s.infra.Node
   BuildConfig/build.openshift.io/v1:
     show: false
   Build/build.openshift.io/v1:

@@ -141,6 +141,8 @@ def _is_processable_file(path: Path, namespace_root: Path) -> bool:
             "horizontalpodautoscalers.autoscaling",
             "verticalpodautoscalers.autoscaling.k8s.io",
             "poddisruptionbudgets.policy",
+            "events",
+            "events.events.k8s.io",
         )
         if parts[1] in processable_resource_dirs and path.suffix.lower() in (
             ".yaml",

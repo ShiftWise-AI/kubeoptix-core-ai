@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from kubeoptix_core_ai.models.metrics import PodMetricsSnapshot
 from kubeoptix_core_ai.models.inventory import (
     ConfigMapSpec,
+    EventSpec,
     OperatorCSVSpec,
     PodLogSummary,
     RouteSpec,
@@ -139,6 +140,7 @@ class NamespaceWorkloadBundle(BaseModel):
     routes: tuple[RouteSpec, ...] = ()
     configmaps: tuple[ConfigMapSpec, ...] = ()
     operators: tuple[OperatorCSVSpec, ...] = ()
+    events: tuple[EventSpec, ...] = ()
     pod_logs: tuple[PodLogSummary, ...] = ()
     secret_references: tuple[SecretReference, ...] = ()
 

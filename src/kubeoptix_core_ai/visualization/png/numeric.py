@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kubeoptix_core_ai.visualization.chart_theme import CHART_COLORS, truncate_chart_label
+from kubeoptix_core_ai.visualization.chart_theme import (
+    CHART_AXIS_COLOR,
+    CHART_COLORS,
+    CHART_MUTED_COLOR,
+    truncate_chart_label,
+)
 from kubeoptix_core_ai.visualization.models import ChartDataset, ChartPoint, ChartSeries
 from kubeoptix_core_ai.visualization.png._mpl import matplotlib, save_figure  # noqa: F401
 from kubeoptix_core_ai.visualization.png.export_config import (
@@ -51,7 +56,7 @@ def _point_for(series: ChartSeries, label: str) -> ChartPoint | None:
 def _empty_chart(output_path: Path, title: str) -> None:
     fig, ax = plt.subplots(figsize=EMPTY_CHART_FIGSIZE)
     ax.axis("off")
-    ax.text(0.5, 0.5, "Sem dados para exibir", ha="center", va="center", fontsize=12, color="#666666")
+    ax.text(0.5, 0.5, "Sem dados para exibir", ha="center", va="center", fontsize=12, color=CHART_MUTED_COLOR)
     ax.set_title(title, fontsize=12, fontweight="bold")
     fig.tight_layout()
     save_figure(fig, output_path)
@@ -107,7 +112,7 @@ def render_numeric_png(dataset: ChartDataset, output_path: Path) -> None:
     ax.set_xlabel(dataset.x_axis_label)
     ax.set_ylim(0, y_max)
     ax.set_title(dataset.title, fontsize=12, fontweight="bold", pad=12)
-    ax.grid(axis="y", linestyle="--", alpha=0.35)
+    ax.grid(axis="y", linestyle="--", color=CHART_AXIS_COLOR)
     if len(bars) > 1 or lines:
         ax.legend(loc="best", fontsize=9)
     fig.tight_layout()

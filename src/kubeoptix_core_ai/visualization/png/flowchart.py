@@ -8,26 +8,33 @@ from pathlib import Path
 
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Polygon
 
+from kubeoptix_core_ai.visualization.chart_theme import CHART_MUTED_COLOR
 from kubeoptix_core_ai.visualization.models import DiagramEdge, DiagramNode, FlowchartDataset
 from kubeoptix_core_ai.visualization.png._mpl import matplotlib, save_figure  # noqa: F401
-from kubeoptix_core_ai.visualization.png.export_config import EMPTY_CHART_FIGSIZE, flowchart_figsize
+from kubeoptix_core_ai.visualization.png.export_config import EMPTY_CHART_FIGSIZE, flowchart_figsize, layout_profile_for_output
 
 import matplotlib.pyplot as plt
 
-
+# Paleta D — corporativa Red Hat (vermelho, preto, cinzas, navy).
 _NODE_STYLE: dict[str, dict[str, str | float]] = {
-    "external": {"facecolor": "#D9E8F7", "edgecolor": "#4472C4", "boxstyle": "round,pad=0.35"},
-    "route": {"facecolor": "#FFF2CC", "edgecolor": "#ED7D31"},
-    "service": {"facecolor": "#E2F0D9", "edgecolor": "#70AD47", "boxstyle": "round,pad=0.25"},
-    "database": {"facecolor": "#E2F0D9", "edgecolor": "#70AD47", "boxstyle": "round,pad=0.25"},
-    "messaging": {"facecolor": "#E2F0D9", "edgecolor": "#70AD47", "boxstyle": "round,pad=0.25"},
-    "secret": {"facecolor": "#F2F2F2", "edgecolor": "#636363", "linewidth": 2.0},
-    "node": {"facecolor": "#F2F2F2", "edgecolor": "#636363", "linewidth": 2.0},
-    "workload": {"facecolor": "#FFFFFF", "edgecolor": "#5B9BD5", "boxstyle": "round,pad=0.2"},
-    "pod": {"facecolor": "#FFFFFF", "edgecolor": "#5B9BD5", "boxstyle": "round,pad=0.2"},
+    "external": {"facecolor": "#D6E4F0", "edgecolor": "#002F5D", "boxstyle": "round,pad=0.35"},
+    "route": {"facecolor": "#F5D0CD", "edgecolor": "#C9190B"},
+    "service": {"facecolor": "#E8E8E8", "edgecolor": "#4D4D4D", "boxstyle": "round,pad=0.25"},
+    "database": {"facecolor": "#D6E4F0", "edgecolor": "#002F5D", "boxstyle": "round,pad=0.25"},
+    "messaging": {"facecolor": "#E8E8E8", "edgecolor": "#6A6E73", "boxstyle": "round,pad=0.25"},
+    "secret": {"facecolor": "#F0F0F0", "edgecolor": "#151515", "linewidth": 2.0},
+    "node": {"facecolor": "#F0F0F0", "edgecolor": "#151515", "linewidth": 2.0},
+    "workload": {"facecolor": "#FFFFFF", "edgecolor": "#C9190B", "boxstyle": "round,pad=0.2"},
+    "pod": {"facecolor": "#FFFFFF", "edgecolor": "#4D4D4D", "boxstyle": "round,pad=0.2"},
 }
 
-_DEFAULT_STYLE = {"facecolor": "#FFFFFF", "edgecolor": "#4472C4", "boxstyle": "round,pad=0.2"}
+_DEFAULT_STYLE = {"facecolor": "#FFFFFF", "edgecolor": "#151515", "boxstyle": "round,pad=0.2"}
+_EDGE_COLOR = "#4D4D4D"
+_EDGE_LABEL_COLOR = "#4D4D4D"
+_CLUSTER_FACE = "#FAFAFA"
+_CLUSTER_EDGE = "#D2D2D2"
+_CLUSTER_TITLE = "#4D4D4D"
+_MAX_NODES_PER_COLUMN = 4
 
 
 @dataclass(frozen=True)
@@ -143,17 +150,27 @@ def _layout_group(
     group_height = 0.0
     for layer_index in sorted(by_layer):
         layer_nodes = by_layer[layer_index]
-        column_height = 0.0
-        column_width = 0.0
+        col_x = x_cursor
+        col_y = 0.0
+        col_width = 0.0
+        stacked = 0
+        layer_height = 0.0
         for node in layer_nodes:
             width, height = _estimate_size(node.label)
+            if stacked >= _MAX_NODES_PER_COLUMN:
+                col_x += col_width + 0.4
+                col_y = 0.0
+                col_width = 0.0
+                stacked = 0
             layouts.append(
-                _NodeLayout(node=node, x=x_cursor, y=-column_height, width=width, height=height)
+                _NodeLayout(node=node, x=col_x, y=-col_y, width=width, height=height)
             )
-            column_height += height + row_gap
-            column_width = max(column_width, width)
-        group_height = max(group_height, column_height)
-        x_cursor += column_width + layer_gap
+            col_y += height + row_gap
+            col_width = max(col_width, width)
+            stacked += 1
+            layer_height = max(layer_height, col_y)
+        group_height = max(group_height, layer_height)
+        x_cursor = col_x + col_width + layer_gap
     return layouts, x_cursor, group_height
 
 
@@ -172,8 +189,8 @@ def _draw_node(ax: plt.Axes, layout: _NodeLayout) -> None:
                 (x, y + height / 2),
             ],
             closed=True,
-            facecolor=str(style.get("facecolor", "#FFF2CC")),
-            edgecolor=str(style.get("edgecolor", "#ED7D31")),
+            facecolor=str(style.get("facecolor", "#F5D0CD")),
+            edgecolor=str(style.get("edgecolor", "#C9190B")),
             linewidth=float(style.get("linewidth", 1.2)),
         )
         ax.add_patch(diamond)
@@ -185,7 +202,7 @@ def _draw_node(ax: plt.Axes, layout: _NodeLayout) -> None:
             height,
             boxstyle=boxstyle,
             facecolor=str(style.get("facecolor", "#FFFFFF")),
-            edgecolor=str(style.get("edgecolor", "#4472C4")),
+            edgecolor=str(style.get("edgecolor", "#151515")),
             linewidth=float(style.get("linewidth", 1.2)),
         )
         ax.add_patch(patch)
@@ -196,7 +213,7 @@ def _draw_node(ax: plt.Axes, layout: _NodeLayout) -> None:
                 height - 0.12,
                 boxstyle=boxstyle,
                 facecolor="none",
-                edgecolor=str(style.get("edgecolor", "#636363")),
+                edgecolor=str(style.get("edgecolor", "#151515")),
                 linewidth=0.8,
             )
             ax.add_patch(inner)
@@ -207,7 +224,7 @@ def _draw_node(ax: plt.Axes, layout: _NodeLayout) -> None:
         layout.node.label,
         ha="center",
         va="center",
-        fontsize=7,
+        fontsize=9,
         wrap=True,
     )
 
@@ -225,21 +242,21 @@ def _draw_edge(ax: plt.Axes, source: _NodeLayout, target: _NodeLayout, label: st
         arrowstyle="-|>",
         mutation_scale=10,
         linewidth=1.0,
-        color="#666666",
+        color=_EDGE_COLOR,
         connectionstyle="arc3,rad=0.08",
     )
     ax.add_patch(arrow)
     if label:
-        ax.text((sx + tx) / 2, (sy + ty) / 2, label, fontsize=6, ha="center", va="center", color="#444444")
+        ax.text((sx + tx) / 2, (sy + ty) / 2, label, fontsize=6, ha="center", va="center", color=_EDGE_LABEL_COLOR)
 
 
 def _empty_chart(output_path: Path, title: str) -> None:
     fig, ax = plt.subplots(figsize=EMPTY_CHART_FIGSIZE)
     ax.axis("off")
-    ax.text(0.5, 0.5, "Sem dados para exibir", ha="center", va="center", fontsize=12, color="#666666")
+    ax.text(0.5, 0.5, "Sem dados para exibir", ha="center", va="center", fontsize=12, color=CHART_MUTED_COLOR)
     ax.set_title(title, fontsize=12, fontweight="bold")
     fig.tight_layout()
-    save_figure(fig, output_path)
+    save_figure(fig, output_path, profile=layout_profile_for_output(output_path))
     plt.close(fig)
 
 
@@ -285,13 +302,13 @@ def render_flowchart_png(dataset: FlowchartDataset, output_path: Path) -> None:
                 max_x - min_x,
                 max_y - min_y,
                 boxstyle="round,pad=0.15",
-                facecolor="#FAFAFA",
-                edgecolor="#CCCCCC",
+                facecolor=_CLUSTER_FACE,
+                edgecolor=_CLUSTER_EDGE,
                 linewidth=1.0,
                 linestyle="--",
             )
             ax.add_patch(cluster)
-            ax.text(min_x + 0.1, max_y + 0.05, title, fontsize=8, fontweight="bold", color="#555555")
+            ax.text(min_x + 0.1, max_y + 0.05, title, fontsize=8, fontweight="bold", color=_CLUSTER_TITLE)
 
     for layout in all_layouts:
         _draw_node(ax, layout)
@@ -307,5 +324,5 @@ def render_flowchart_png(dataset: FlowchartDataset, output_path: Path) -> None:
     ax.autoscale()
     ax.margins(0.15)
     fig.tight_layout()
-    save_figure(fig, output_path)
+    save_figure(fig, output_path, profile=layout_profile_for_output(output_path))
     plt.close(fig)
