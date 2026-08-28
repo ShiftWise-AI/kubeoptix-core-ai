@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import signal
+import shutil
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -29,6 +30,7 @@ from kubeoptix_core_ai.api.progress import (
     RunProgress,
 )
 from kubeoptix_core_ai.errors import AnalyzerError, ConfigurationError
+from kubeoptix_core_ai.visualization.pipeline import report_assets_prefix
 
 DEFAULT_PORT = 8000
 APP_NAME = "kubeoptix-core-ai"
@@ -168,6 +170,34 @@ class ReportStatusResponse(BaseModel):
     total: int = Field(ge=0, default=0)
     report: str | None = None
     error: str | None = None
+
+
+class DeleteReportRequest(BaseModel):
+    """Corpo da requisição para apagar um relatório gerado."""
+
+    nome_do_arquivo: str = Field(
+        ...,
+        description="Nome do arquivo Markdown gerado em /app/data/reports.",
+        examples=["example-ns-prd.md"],
+    )
+
+    @field_validator("nome_do_arquivo")
+    @classmethod
+    def validate_markdown_filename(cls, value: str) -> str:
+        filename = value.strip()
+        path = Path(filename)
+        if not filename or path.name != filename or path.suffix.lower() != ".md":
+            raise ValueError("Informe apenas o nome de um arquivo .md.")
+        if not path.stem:
+            raise ValueError("Informe um nome de arquivo .md válido.")
+        return filename
+
+
+class DeleteReportResponse(BaseModel):
+    status: str
+    report: str
+    assets: str
+    deleted_assets: bool
 
 
 def _uptime_seconds() -> float:
@@ -346,6 +376,42 @@ def _get_execution_store() -> ExecutionStore:
 
 def _get_report_executor() -> ThreadPoolExecutor:
     return _report_executor
+
+
+def _delete_generated_report(filename: str) -> DeleteReportResponse:
+    service = _get_assessment_service()
+    reports_dir = service.reports_dir
+    report_path = (reports_dir / filename).resolve()
+    if report_path.parent != reports_dir:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"message": "Nome de arquivo inválido."},
+        )
+    if not report_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "Relatório não encontrado.", "report": str(report_path)},
+        )
+
+    assets_path = reports_dir / report_assets_prefix(report_path.stem)
+    if assets_path.exists() and not assets_path.is_dir():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"message": "Caminho de assets não é um diretório."},
+        )
+
+    report_path.unlink()
+    deleted_assets = False
+    if assets_path.is_dir():
+        shutil.rmtree(assets_path)
+        deleted_assets = True
+
+    return DeleteReportResponse(
+        status="SUCCESS",
+        report=str(report_path),
+        assets=str(assets_path),
+        deleted_assets=deleted_assets,
+    )
 
 
 def _run_report_execution(
@@ -530,6 +596,19 @@ async def report_status(execution_id: str) -> ReportStatusResponse:
         report=snapshot.report,
         error=snapshot.error,
     )
+
+
+@app.delete(
+    "/api/reports",
+    response_model=DeleteReportResponse,
+    summary="Apagar relatório Markdown gerado",
+    response_description="Relatório Markdown e pasta de assets removidos.",
+)
+async def delete_report(request: DeleteReportRequest) -> DeleteReportResponse:
+    """
+    Remove um arquivo Markdown gerado e a pasta `<nome>_assets` correspondente.
+    """
+    return _delete_generated_report(request.nome_do_arquivo)
 
 
 def main() -> None:
