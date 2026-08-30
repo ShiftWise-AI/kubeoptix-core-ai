@@ -1,4 +1,4 @@
-"""Carregador de workloads por namespace."""
+"""Workload loader for a namespace."""
 
 from __future__ import annotations
 
@@ -83,7 +83,7 @@ _TRACKED_PATH_ATTRS = frozenset(
 
 
 class _TrackingNamespacePaths:
-    """Itera os arquivos do namespace e reporta progresso após cada um."""
+    """Iterate namespace files and report progress after each one."""
 
     def __init__(
         self,
@@ -109,7 +109,7 @@ class _TrackingNamespacePaths:
 
 
 class WorkloadLoader:
-    """Carrega e normaliza workloads de um namespace."""
+    """Load and normalize workloads for a namespace."""
 
     def __init__(self, config: AnalyzerConfig | None = None) -> None:
         self._config = config or AnalyzerConfig.from_env()
@@ -124,7 +124,7 @@ class WorkloadLoader:
         include_logs: bool = True,
         include_inventory: bool = True,
     ) -> NamespaceWorkloadBundle:
-        """Carrega todos os workloads de um namespace."""
+        """Load all workloads from a namespace."""
         namespace_root = self._config.namespace_path(namespace)
         if not namespace_root.is_dir():
             raise ConfigurationError(
@@ -206,9 +206,9 @@ class WorkloadLoader:
         )
 
     def load_fleet_workloads(self) -> tuple[Workload, ...]:
-        """Carrega workloads de todos os namespaces para baseline de frota.
+        """Load workloads from all namespaces for fleet baseline.
 
-        Omite catálogo OLM, events e logs — só controllers, pods e métricas.
+        Omits OLM catalog entries, events, and logs — only controllers, pods, and metrics.
         """
         workloads: list[Workload] = []
         for ns_dir in list_namespace_dirs(self._config.workloads_base):

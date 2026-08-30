@@ -1,4 +1,4 @@
-"""Configuração centralizada de caminhos e parâmetros do agente."""
+"""Centralized configuration for agent paths and parameters."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 
 from kubeoptix_core_ai.errors import ConfigurationError
 
-# Caminhos relativos ao diretório de trabalho — portáveis entre ambientes.
+# Relative paths from the working directory — portable across environments.
 DEFAULT_WORKLOADS_BASE = Path("data/metadados")
 DEFAULT_WORKNODES_PATH = Path("data/worknodes")
 
@@ -24,7 +24,7 @@ _VALID_NAMESPACE = re.compile(r"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$")
 
 
 def resolve_worknodes_path(metadata_dir: Path) -> Path:
-    """Localiza o diretório de worknodes relativo aos metadados."""
+    """Locate the worknodes directory relative to the metadata directory."""
     metadata_dir = metadata_dir.resolve()
     candidates = (
         metadata_dir / "worknodes",
@@ -41,14 +41,14 @@ def resolve_worknodes_path(metadata_dir: Path) -> Path:
 
 @dataclass(frozen=True)
 class AnalyzerConfig:
-    """Configuração imutável do analisador."""
+    """Immutable analyzer configuration."""
 
     workloads_base: Path = field(default_factory=lambda: DEFAULT_WORKLOADS_BASE)
     worknodes_path: Path = field(default_factory=lambda: DEFAULT_WORKNODES_PATH)
 
     @classmethod
     def from_env(cls) -> AnalyzerConfig:
-        """Carrega configuração a partir de variáveis de ambiente."""
+        """Load configuration from environment variables."""
         metadata_dir = os.environ.get(ENV_METADATA_DIR)
         if metadata_dir:
             return cls.from_metadata_dir(Path(metadata_dir))
@@ -69,7 +69,7 @@ class AnalyzerConfig:
 
     @classmethod
     def from_metadata_dir(cls, metadata_dir: Path) -> AnalyzerConfig:
-        """Configura workloads e worknodes a partir do diretório de metadados."""
+        """Configure workloads and worknodes from the metadata directory."""
         path = Path(metadata_dir).resolve()
         if not path.is_dir():
             raise ConfigurationError(f"Diretório de metadados não encontrado: {path}")
@@ -79,7 +79,7 @@ class AnalyzerConfig:
         )
 
     def namespace_path(self, namespace: str) -> Path:
-        """Retorna o diretório de um namespace dentro da base de workloads."""
+        """Return the namespace directory within the workloads base."""
         if not namespace or not _VALID_NAMESPACE.match(namespace):
             raise ConfigurationError(
                 f"Nome de namespace inválido: {namespace!r}. "

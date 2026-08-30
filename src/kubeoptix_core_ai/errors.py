@@ -1,4 +1,4 @@
-"""Exceções do analisador."""
+"""Analyzer exceptions."""
 
 from __future__ import annotations
 
@@ -6,15 +6,15 @@ from pathlib import Path
 
 
 class AnalyzerError(Exception):
-    """Erro base do analisador."""
+    """Base analyzer error."""
 
 
 class ConfigurationError(AnalyzerError):
-    """Erro de configuração ou caminho inválido."""
+    """Invalid configuration or path error."""
 
 
 class ParseError(AnalyzerError):
-    """Erro ao interpretar um arquivo de dados."""
+    """Error when interpreting a data file."""
 
     def __init__(self, message: str, *, file_path: Path | None = None) -> None:
         self.file_path = file_path
@@ -23,7 +23,7 @@ class ParseError(AnalyzerError):
 
 
 class LoaderError(AnalyzerError):
-    """Erro ao carregar um conjunto de dados."""
+    """Error while loading a dataset."""
 
     def __init__(
         self,

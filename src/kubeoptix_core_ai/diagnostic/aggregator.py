@@ -1,4 +1,4 @@
-"""Agregação de métricas de diagnóstico de ingestão."""
+"""Aggregation of ingestion diagnosis metrics."""
 
 from __future__ import annotations
 
@@ -53,9 +53,9 @@ def _sum_per_pod_times_replicas(
     attr: str,
 ) -> tuple[float | None, str | None]:
     """
-    Soma (valor por pod × réplicas desejadas) para cada workload.
+    Sum (value per pod × desired replicas) for each workload.
 
-    Retorna (total_normalizado, nota) — nota preenchida quando há lacunas.
+    Returns (normalized_total, note) — the note is populated when gaps exist.
     """
     total = 0.0
     has_any = False

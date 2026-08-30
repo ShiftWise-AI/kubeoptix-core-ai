@@ -1,4 +1,4 @@
-"""Interface de linha de comando do KubeOptix Core AI."""
+"""Command-line interface for KubeOptix Core AI."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from kubeoptix_core_ai.report.pipeline import AssessmentPipeline
 
 
 def _workload_to_dict(workload) -> dict:
-    """Serializa workload para saída JSON (inclui rastreabilidade)."""
+    """Serialize a workload to JSON output, including traceability."""
     return json.loads(workload.model_dump_json())
 
 

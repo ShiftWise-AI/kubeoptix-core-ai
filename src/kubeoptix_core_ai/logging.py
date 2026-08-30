@@ -1,4 +1,4 @@
-"""Configuração de logging do analisador."""
+"""Analyzer logging configuration."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ _LOGGER_CONFIGURED = False
 
 
 def setup_logging(level: int = logging.INFO) -> None:
-    """Configura o logging raiz do pacote (idempotente)."""
+    """Configure the package root logger in an idempotent way."""
     global _LOGGER_CONFIGURED
     if _LOGGER_CONFIGURED:
         return
@@ -30,5 +30,5 @@ def setup_logging(level: int = logging.INFO) -> None:
 
 
 def get_logger(name: str) -> logging.Logger:
-    """Retorna logger filho do namespace do pacote."""
+    """Return a child logger for the package namespace."""
     return logging.getLogger(f"kubeoptix_core_ai.{name}")

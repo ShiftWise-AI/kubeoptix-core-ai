@@ -1,35 +1,35 @@
 # kubeoptix-core-ai
 
-Local OpenShift/Kubernetes workload assessment agent. Ingests YAML metadata
+Local OpenShift/Kubernetes workload assessment agent. It ingests YAML metadata
 collected from a cluster, applies deterministic rules, and optionally runs a
-local statistical / ML layer to flag atypical profiles within a namespace.
+local statistical/ML layer to flag atypical profiles inside a namespace.
 
-Assessment output is a structured Markdown report (pt-BR) with findings,
-visualizations, recommendations, and explicit confidence levels per item.
+Assessment output is a structured Markdown report with findings,
+visualizations, recommendations, and explicit confidence levels for each item.
 
 ## Requirements
 
 - Python 3.11+
 - CPU only — no GPU, no external LLM, no paid APIs, no network at runtime
-- **matplotlib** — gráficos numéricos e de composição (incluído nas dependências)
-- **KubeDiagrams + Graphviz** — diagramas de arquitetura (CLI `kube-diagrams`; instalado no container; ver abaixo para dev local)
+- **matplotlib** — numeric and composition charts (included in dependencies)
+- **KubeDiagrams + Graphviz** — architecture diagrams (CLI `kube-diagrams`; installed in the container; see below for local development)
 
-### Diagramas de arquitetura
+### Architecture diagrams
 
-O relatório invoca o CLI [KubeDiagrams](https://github.com/philippemerle/KubeDiagrams) (`kube-diagrams`).
-Requer Graphviz `dot` no PATH.
+The report invokes the [KubeDiagrams](https://github.com/philippemerle/KubeDiagrams) CLI (`kube-diagrams`).
+It requires Graphviz `dot` in PATH.
 
 ```bash
 # Fedora/RHEL
 sudo dnf install graphviz
 
-# CLI KubeDiagrams (pygraphviz 2.0.1 tem wheel; KubeDiagrams fixa 1.14 no metadata)
+# KubeDiagrams CLI (pygraphviz 2.0.1 has a wheel; KubeDiagrams pins 1.14 in metadata)
 pip install pygraphviz==2.0.1
 pip install --no-deps KubeDiagrams==0.8.0
 pip install diagrams graphviz2drawio
 ```
 
-No **container** (Containerfile), o CLI é instalado automaticamente com esse workaround.
+In the **container** (Containerfile), the CLI is installed automatically with this workaround.
 
 ## Installation
 
@@ -71,7 +71,7 @@ kubeoptix-core-ai report --namespace my-namespace-prd --output output/
 |----------|-------------|
 | `KUBEOPTIX_WORKLOADS_BASE` | Base directory for namespace metadata |
 | `KUBEOPTIX_WORKNODES_PATH` | Directory of worknode YAML files |
-| `KUBEOPTIX_ML_ENABLED` | `true`/`false` — enable ML layer (default: `true`) |
+| `KUBEOPTIX_ML_ENABLED` | `true`/`false` — enable the ML layer (default: `true`) |
 | `KUBEOPTIX_ML_SEED` | Random seed for stochastic algorithms (default: `42`) |
 
 ## Architecture
@@ -90,9 +90,9 @@ YAML → parsers → Pydantic models
          Markdown report + visualizations
 ```
 
-The deterministic layer handles verifiable facts (missing request, measured
-usage above request, missing probes). The ML layer adds relative comparisons
-within the namespace — it **never replaces** simple rules when those are more
+The deterministic layer handles verifiable facts such as missing requests,
+usage above request, and missing probes. The ML layer adds relative comparisons
+within the namespace; it **never replaces** simple rules when those are more
 reliable.
 
 ## AI techniques
@@ -153,8 +153,8 @@ capped at **MEDIUM** or **LOW** and use lower severities (INFO/LOW) by design.
 ### What the report guarantees
 
 - **Traceability:** findings link to source files and field paths when available.
-- **No invented data:** missing metrics, events, or secrets content are stated
-  explicitly in limitations (§21) rather than inferred.
+- **No invented data:** missing metrics, events, or secret content are stated
+  explicitly in the limitations section rather than inferred.
 - **Terminology discipline:** configured *request/limit* is never labeled as
   measured *usage*; PodMetrics usage is labeled as a point-in-time snapshot.
 - **Actionable vs exploratory:** recommendations in §19 link back to detailed
@@ -164,7 +164,7 @@ capped at **MEDIUM** or **LOW** and use lower severities (INFO/LOW) by design.
 ### Overall trust boundaries
 
 The produced report is **high confidence for configuration facts** present in
-the dump, and **moderate confidence for sizing and optimization advice** that
+the dump and **moderate confidence for sizing and optimization advice** that
 depends on a single PodMetrics snapshot without historical series. Validation
 with 7–30 days of metrics before production changes is recommended in the
 report conclusion when runtime data exists.
