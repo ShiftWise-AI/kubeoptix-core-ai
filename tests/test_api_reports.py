@@ -145,6 +145,42 @@ def test_delete_report_removes_markdown_and_assets(
     assert not assets.exists()
 
 
+def test_delete_report_by_path_param_removes_markdown_and_assets(
+    reports_client: TestClient,
+) -> None:
+    reports_dir = api._get_assessment_service().reports_dir
+    report = reports_dir / f"{EXAMPLE_NAMESPACE}.md"
+    assets = reports_dir / f"{EXAMPLE_NAMESPACE}_assets"
+    assets.mkdir(parents=True)
+    report.write_text("# report\n", encoding="utf-8")
+    (assets / "chart.png").write_bytes(b"png")
+
+    response = reports_client.delete(f"/api/reports/{report.name}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "SUCCESS"
+    assert body["report"] == str(report)
+    assert body["assets"] == str(assets)
+    assert body["deleted_assets"] is True
+    assert not report.exists()
+    assert not assets.exists()
+
+
+def test_delete_report_by_path_param_without_api_prefix(
+    reports_client: TestClient,
+) -> None:
+    reports_dir = api._get_assessment_service().reports_dir
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    report = reports_dir / f"{EXAMPLE_NAMESPACE}.md"
+    report.write_text("# report\n", encoding="utf-8")
+
+    response = reports_client.delete(f"/reports/{report.name}")
+
+    assert response.status_code == 200
+    assert not report.exists()
+
+
 def test_delete_report_returns_404_for_missing_markdown(
     reports_client: TestClient,
 ) -> None:

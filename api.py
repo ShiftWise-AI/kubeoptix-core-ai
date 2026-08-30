@@ -378,13 +378,32 @@ def _get_report_executor() -> ThreadPoolExecutor:
     return _report_executor
 
 
+def _validate_report_filename(filename: str) -> str:
+    cleaned = filename.strip()
+    if not cleaned:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"message": "Informe apenas o nome de um arquivo .md."},
+        )
+    path = Path(cleaned)
+    if ".." in cleaned or "/" in cleaned or "\\" in cleaned or path.name != cleaned:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"message": "Nome de arquivo inválido."},
+        )
+    if not cleaned.lower().endswith(".md"):
+        cleaned = f"{cleaned}.md"
+    return cleaned
+
+
 def _delete_generated_report(filename: str) -> DeleteReportResponse:
+    validated_filename = _validate_report_filename(filename)
     service = _get_assessment_service()
     reports_dir = service.reports_dir
-    report_path = (reports_dir / filename).resolve()
+    report_path = (reports_dir / validated_filename).resolve()
     if report_path.parent != reports_dir:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"message": "Nome de arquivo inválido."},
         )
     if not report_path.is_file():
@@ -530,6 +549,12 @@ async def run_analysis(request: AnalysisRequest) -> AnalysisResponse:
     summary="Iniciar geração assíncrona de relatórios",
     response_description="Execução aceita; consultar o status pelo execution_id.",
 )
+@app.post(
+    "/reports",
+    response_model=ReportAcceptedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    include_in_schema=False,
+)
 async def start_report(request: AnalysisRequest) -> ReportAcceptedResponse:
     """
     Inicia a análise em background e devolve um `execution_id` imediatamente.
@@ -576,6 +601,11 @@ async def start_report(request: AnalysisRequest) -> ReportAcceptedResponse:
     summary="Consultar progresso da geração do relatório",
     response_description="Estado atual da execução (polling).",
 )
+@app.get(
+    "/reports/{execution_id}/status",
+    response_model=ReportStatusResponse,
+    include_in_schema=False,
+)
 async def report_status(execution_id: str) -> ReportStatusResponse:
     snapshot = _get_execution_store().get(execution_id)
     if snapshot is None:
@@ -599,10 +629,33 @@ async def report_status(execution_id: str) -> ReportStatusResponse:
 
 
 @app.delete(
+    "/api/reports/{filename}",
+    response_model=DeleteReportResponse,
+    summary="Apagar relatório Markdown gerado por nome no path",
+    response_description="Relatório Markdown e pasta de assets removidos.",
+)
+@app.delete(
+    "/reports/{filename}",
+    response_model=DeleteReportResponse,
+    include_in_schema=False,
+)
+async def delete_report_by_path(filename: str) -> DeleteReportResponse:
+    """
+    Remove um arquivo Markdown gerado e a pasta `<nome>_assets` correspondente pelo nome no path.
+    """
+    return _delete_generated_report(filename)
+
+
+@app.delete(
     "/api/reports",
     response_model=DeleteReportResponse,
     summary="Apagar relatório Markdown gerado",
     response_description="Relatório Markdown e pasta de assets removidos.",
+)
+@app.delete(
+    "/reports",
+    response_model=DeleteReportResponse,
+    include_in_schema=False,
 )
 async def delete_report(request: DeleteReportRequest) -> DeleteReportResponse:
     """
