@@ -32,13 +32,10 @@ def _markdown_image(title: str, image_relpath: str) -> str:
 
 
 def _markdown_architecture_image(title: str, image_relpath: str) -> str:
-    """Imagem em largura de página para diagramas paisagem (arquitetura/placement)."""
+    """Imagem em largura de página para diagramas paisagem sem inserir HTML bruto."""
     alt = title.replace("[", "").replace("]", "").replace('"', "")
     path = _normalize_image_path(image_relpath)
-    return (
-        f'<img src="{path}" alt="{alt}" '
-        f'style="width:100%;max-width:100%;height:auto;" />'
-    )
+    return f"![{alt}]({path}){{ width=100% }}"
 
 
 def embed_markdown_images(content: str, *, markdown_dir: Path) -> str:

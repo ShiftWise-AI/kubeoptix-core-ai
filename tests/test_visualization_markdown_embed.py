@@ -20,9 +20,9 @@ def test_markdown_architecture_image_uses_full_page_width() -> None:
         "Arquitetura",
         "ns_assets/namespace_architecture.png",
     )
-    assert 'src="./ns_assets/namespace_architecture.png"' in rendered
-    assert "width:100%" in rendered
-    assert rendered.startswith("<img ")
+    assert "![Arquitetura](./ns_assets/namespace_architecture.png)" in rendered
+    assert "width=100%" in rendered
+    assert "<img" not in rendered
 
 
 def test_embed_markdown_images_strips_legacy_width_attribute(tmp_path: Path) -> None:
