@@ -3,6 +3,29 @@
 A API HTTP é servida pelo `api.py` (FastAPI + Uvicorn). A documentação interativa
 está disponível em `/docs` (Swagger UI) e `/redoc` quando o servidor está em execução.
 
+## Como executar
+
+```bash
+KUBEOPTIX_METADATA_DIR=/path/to/metadata \
+KUBEOPTIX_OUTPUT_DIR=/path/to/reports \
+python api.py
+```
+
+O servidor usa `0.0.0.0:8000` por padrão. `KUBEOPTIX_API_HOST` e
+`KUBEOPTIX_API_PORT` alteram o endereço e a porta. Em container/OpenShift, os
+padrões são `/app/data/assessment` para os metadados e `/app/data/reports` para
+os relatórios. A documentação interativa fica em `/docs` e `/redoc`.
+
+## Estrutura dos dados
+
+`KUBEOPTIX_METADATA_DIR` deve conter uma pasta por namespace e uma pasta
+`worknodes/` no próprio diretório ou no diretório pai. Cada namespace é validado
+com o padrão Kubernetes (`[a-z0-9.-]`) e pode conter os YAMLs coletados de
+controllers, pods, PodMetrics, serviços, rotas, ConfigMaps, PVCs, autoscalers,
+PDBs, eventos, logs e recursos OLM. O carregador correlaciona esses recursos
+antes da análise. A ausência de uma categoria não gera dados sintéticos; ela é
+registrada como limitação do relatório.
+
 ## Endpoints de saúde
 
 | Método | Caminho | Descrição |
@@ -10,6 +33,10 @@ está disponível em `/docs` (Swagger UI) e `/redoc` quando o servidor está em 
 | `GET` | `/health/live` | Liveness probe |
 | `GET` | `/health/ready` | Readiness probe |
 | `GET` | `/health` | Status geral da aplicação |
+
+`/health/ready` verifica se o diretório de trabalho e `/tmp` são utilizáveis e,
+quando configurado, se o arquivo indicado por `MARK_DOWN_FILE` está disponível.
+Retorna `200` quando todos os checks estão `UP` e `503` caso contrário.
 
 ## Análise de namespaces
 
@@ -191,3 +218,38 @@ EXEC_ID=$(curl -sS -X POST "http://localhost:8000/api/reports" \
 
 curl -sS "http://localhost:8000/api/reports/${EXEC_ID}/status"
 ```
+
+## Gerenciamento de relatórios
+
+Os relatórios são arquivos Markdown em `KUBEOPTIX_OUTPUT_DIR`. A exclusão
+também remove a pasta de assets correspondente (`<namespace>_assets`) quando
+ela existe.
+
+| Método | Caminho | Descrição |
+|--------|---------|-----------|
+| `DELETE` | `/api/reports` | Remove o relatório indicado no corpo |
+| `DELETE` | `/api/reports/{filename}` | Remove o relatório indicado no path |
+
+### `DELETE /api/reports`
+
+```json
+{
+  "nome_do_arquivo": "example-ns-prd.md"
+}
+```
+
+O nome deve ser um arquivo `.md`, sem diretórios ou `..`. A API retorna `422`
+para nomes inválidos, `404` quando o relatório não existe e `200` quando a
+remoção é concluída.
+
+```json
+{
+  "status": "SUCCESS",
+  "report": "/app/data/reports/example-ns-prd.md",
+  "assets": "/app/data/reports/example-ns-prd_assets",
+  "deleted_assets": true
+}
+```
+
+O caminho sem o prefixo `/api` (`/reports`) também existe para compatibilidade,
+mas não aparece no schema OpenAPI público.

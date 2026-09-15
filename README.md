@@ -1,15 +1,16 @@
 # kubeoptix-core-ai
 
 Local OpenShift/Kubernetes workload assessment agent. It ingests YAML metadata
-collected from a cluster, applies deterministic rules, and optionally runs a
-local statistical/ML layer to flag atypical profiles inside a namespace.
+collected from a cluster, normalizes workloads and related resources, applies
+deterministic rules, and optionally runs a local statistical/ML layer to flag
+atypical profiles inside a namespace.
 
 Assessment output is a structured Markdown report with findings,
 visualizations, recommendations, and explicit confidence levels for each item.
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.12+
 - CPU only — no GPU, no external LLM, no paid APIs, no network at runtime
 - **matplotlib** — numeric and composition charts (included in dependencies)
 - **KubeDiagrams + Graphviz** — architecture diagrams (CLI `kube-diagrams`; installed in the container; see below for local development)
@@ -39,9 +40,20 @@ pip install -e ".[dev]"
 
 ## Usage
 
+The CLI reads a metadata directory containing one directory per namespace and a
+`worknodes/` directory. A namespace directory may contain workload controllers,
+pods, PodMetrics, services, routes, ConfigMaps, PVCs, autoscalers, PDBs, events,
+pod logs, and OLM resources in the layout produced by the cluster collection
+process. Files that are absent are reported as unavailable; the analyzer does
+not invent runtime data.
+
 ```bash
 # List available namespaces
 kubeoptix-core-ai list-namespaces
+
+# Inspect parsed workloads and worknodes
+kubeoptix-core-ai load-workloads --namespace my-namespace-prd
+kubeoptix-core-ai load-worknodes
 
 # Ingestion diagnostics (no operational findings)
 kubeoptix-core-ai diagnose --namespace my-namespace-prd
@@ -65,6 +77,13 @@ kubeoptix-core-ai report --namespace my-namespace-prd --output output/
 ./run.sh /path/to/metadata /path/to/output
 ```
 
+The `load-workloads`, `load-worknodes`, `diagnose`, and `analyze` commands
+support `--json` for machine-readable output. Use `--metadata-dir
+/path/to/metadata` to configure a metadata tree in one option, or use
+`--workloads-base` and `--worknodes-path` separately. The `run` command requires
+`--metadata-dir` and `--output`; `run.sh` is a convenience wrapper for that
+command.
+
 ### Environment variables
 
 | Variable | Description |
@@ -73,6 +92,10 @@ kubeoptix-core-ai report --namespace my-namespace-prd --output output/
 | `KUBEOPTIX_WORKNODES_PATH` | Directory of worknode YAML files |
 | `KUBEOPTIX_ML_ENABLED` | `true`/`false` — enable the ML layer (default: `true`) |
 | `KUBEOPTIX_ML_SEED` | Random seed for stochastic algorithms (default: `42`) |
+
+The HTTP API uses `KUBEOPTIX_METADATA_DIR` and `KUBEOPTIX_OUTPUT_DIR` instead of
+the CLI's relative defaults. In the container these default to
+`/app/data/assessment` and `/app/data/reports`.
 
 ## Architecture
 
@@ -183,7 +206,21 @@ pytest
 
 REST endpoints for health checks and namespace analysis are documented in
 [`docs/api.md`](docs/api.md). Interactive OpenAPI docs are available at `/docs`
-when running `python api.py`.
+and `/redoc` when running `python api.py`.
+
+Start the API locally with:
+
+```bash
+KUBEOPTIX_METADATA_DIR=/path/to/metadata \
+KUBEOPTIX_OUTPUT_DIR=/path/to/output \
+python api.py
+```
+
+The container exposes port `8000`; `KUBEOPTIX_API_HOST` and
+`KUBEOPTIX_API_PORT` control the bind address and port. For OpenShift, use
+`run-ocp.sh` to generate reports from the configured data directories. The
+application runs without an external LLM, cloud inference service, or network
+access at runtime.
 
 ## Agent specification
 
