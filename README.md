@@ -84,6 +84,38 @@ support `--json` for machine-readable output. Use `--metadata-dir
 `--metadata-dir` and `--output`; `run.sh` is a convenience wrapper for that
 command.
 
+### Operational log benchmark
+
+The project includes a deterministic benchmark for operational failure patterns in
+pod logs, such as DNS/service lookup errors (`ENOTFOUND`, `fetch failed`), HTTP
+5xx responses, and PostgreSQL local `trust` authentication. This is intentional
+and local-only; it does not depend on any external LLM or API.
+
+```bash
+python3 scripts/benchmark_log_signals.py
+```
+
+The benchmark reads the assessment corpus under `../base-treinamento/assessment/shiftwise-ai`
+and reports precision, recall, and F1 for the expected operational signals.
+
+The deterministic layer also correlates runtime DNS failures with service names declared in
+ConfigMaps and workload env values, such as `ANALYZER_API_URL=http://analyzer-api:8000`,
+which helps distinguish a genuine missing backend from a transient startup-order problem.
+
+### Structural report parity benchmark
+
+To compare the generated report with the analyzer reference and verify that the
+report keeps the same section flow, architecture block and action plan structure,
+run:
+
+```bash
+python3 scripts/benchmark_report_structure.py
+```
+
+This check is deterministic and local-only: it measures how close the generated
+Markdown is to the structural reference without relying on any external LLM or
+generative model.
+
 ### Environment variables
 
 | Variable | Description |

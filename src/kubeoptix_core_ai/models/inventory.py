@@ -53,6 +53,7 @@ class ConfigMapSpec(BaseModel):
     namespace: str
     app_group: str | None = None
     keys: tuple[str, ...] = ()
+    data: dict[str, str] = Field(default_factory=dict)
     source: DataSourceRef
 
 

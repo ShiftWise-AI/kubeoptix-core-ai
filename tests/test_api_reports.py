@@ -116,15 +116,15 @@ def test_report_status_polls_until_markdown_exists(
     assert final["total"] >= final["processed"]
     assert final["report"] is not None
     assert Path(final["report"]).is_file()
-    assert final["report"].endswith(f"{EXAMPLE_NAMESPACE}.md")
+    assert final["report"].endswith(f"ml-{EXAMPLE_NAMESPACE}.md")
 
 
 def test_delete_report_removes_markdown_and_assets(
     reports_client: TestClient,
 ) -> None:
     reports_dir = api._get_assessment_service().reports_dir
-    report = reports_dir / f"{EXAMPLE_NAMESPACE}.md"
-    assets = reports_dir / f"{EXAMPLE_NAMESPACE}_assets"
+    report = reports_dir / f"ml-{EXAMPLE_NAMESPACE}.md"
+    assets = reports_dir / f"ml-{EXAMPLE_NAMESPACE}_assets"
     assets.mkdir(parents=True)
     report.write_text("# report\n", encoding="utf-8")
     (assets / "chart.png").write_bytes(b"png")
@@ -149,8 +149,8 @@ def test_delete_report_by_path_param_removes_markdown_and_assets(
     reports_client: TestClient,
 ) -> None:
     reports_dir = api._get_assessment_service().reports_dir
-    report = reports_dir / f"{EXAMPLE_NAMESPACE}.md"
-    assets = reports_dir / f"{EXAMPLE_NAMESPACE}_assets"
+    report = reports_dir / f"ml-{EXAMPLE_NAMESPACE}.md"
+    assets = reports_dir / f"ml-{EXAMPLE_NAMESPACE}_assets"
     assets.mkdir(parents=True)
     report.write_text("# report\n", encoding="utf-8")
     (assets / "chart.png").write_bytes(b"png")
@@ -172,7 +172,7 @@ def test_delete_report_by_path_param_without_api_prefix(
 ) -> None:
     reports_dir = api._get_assessment_service().reports_dir
     reports_dir.mkdir(parents=True, exist_ok=True)
-    report = reports_dir / f"{EXAMPLE_NAMESPACE}.md"
+    report = reports_dir / f"ml-{EXAMPLE_NAMESPACE}.md"
     report.write_text("# report\n", encoding="utf-8")
 
     response = reports_client.delete(f"/reports/{report.name}")

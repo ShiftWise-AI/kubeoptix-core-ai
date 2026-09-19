@@ -9,7 +9,27 @@ from kubeoptix_core_ai.models.inventory import PodLogSummary
 
 _LOG_LEVEL_RE = re.compile(r"\b(DEBUG|INFO|WARN|WARNING|ERROR|FATAL|TRACE)\b")
 _RUNTIME_SIGNAL_PATTERNS: dict[str, re.Pattern[str]] = {
-    "oracle.jdbc": re.compile(r"oracle\.jdbc\.driver"),
+    "oracle.jdbc": re.compile(r"oracle\.jdbc\.driver", re.IGNORECASE),
+    "dns_lookup_failure": re.compile(
+        r"(?:getaddrinfo\s+ENOTFOUND|ENOTFOUND\s+\S+|fetch failed|dial\s+tcp.*lookup|lookup.*(?:ENOTFOUND|EAI_AGAIN))",
+        re.IGNORECASE,
+    ),
+    "service_connectivity_failure": re.compile(
+        r"(?:ECONNREFUSED|connection refused|connect ECONNREFUSED|dial tcp.*connection refused|fetch failed)",
+        re.IGNORECASE,
+    ),
+    "http_5xx": re.compile(
+        r'"\s*(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+\S+\s+HTTP/\d\.\d"\s+5\d\d\b',
+        re.IGNORECASE,
+    ),
+    "postgres_trust_auth": re.compile(
+        r"enabling\s+[\"']?trust[\"']?\s+authentication\s+for\s+local\s+connections|trust.*authentication",
+        re.IGNORECASE,
+    ),
+    "database_connection_error": re.compile(
+        r"(?:ECONNREFUSED|connection refused|connect ECONNREFUSED|dial tcp.*:5432|database.*(down|unreachable))",
+        re.IGNORECASE,
+    ),
 }
 _MAX_LINES = 5000
 

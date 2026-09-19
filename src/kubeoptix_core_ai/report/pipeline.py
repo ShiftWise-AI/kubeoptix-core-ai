@@ -65,7 +65,7 @@ class AssessmentPipeline:
         self,
         namespace: str,
         *,
-        enable_ml: bool | None = None,
+        enable_ml: bool | None = True,
         inventory: NamespaceFileInventory | None = None,
         progress: AnalysisProgress | None = None,
     ) -> AssessmentBundle:

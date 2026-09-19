@@ -5,8 +5,9 @@ semelhantes (ex.: frontends leves vs backends pesados) para orientar
 comparações de right-sizing dentro do mesmo grupo.
 
 K-Means (scikit-learn):
-- CPU only, seed fixo para reprodutibilidade;
-- k escolhido automaticamente entre 2 e min(4, n-1).
+- inicialização determinística para manter resposta estável entre execuções;
+- k escolhido automaticamente entre 2 e min(4, n-1);
+- sem depender de RNG aleatório para definir centroides iniciais.
 
 Não substitui labels ou nomes de aplicação — apenas agrupa por números.
 """
@@ -29,6 +30,22 @@ def _choose_k(workload_count: int) -> int | None:
     return min(4, max(2, workload_count // 2))
 
 
+def _deterministic_kmeans_init(data: np.ndarray, n_clusters: int) -> np.ndarray:
+    """Seleciona centroides iniciais fixos por ordenação determinística.
+
+    O ``KMeans`` padrão usa ``k-means++`` e pode convergir para diferentes
+    partições equivalentes para o mesmo conjunto de dados, dependendo do estado
+    aleatório do processo. Para manter a análise estável, partimos de centroides
+    extraídos em posições espaçadas da ordenação canônica das features.
+    """
+    if len(data) < n_clusters:
+        raise ValueError("Dados insuficientes para inicializar KMeans determinístico")
+
+    order = np.lexsort(tuple(data[:, idx] for idx in range(data.shape[1] - 1, -1, -1)))
+    indices = np.linspace(0, len(order) - 1, n_clusters, dtype=int)
+    return data[order[indices]]
+
+
 def analyze_clustering(
     features: FeatureMatrix,
     namespace: str,
@@ -49,8 +66,10 @@ def analyze_clustering(
 
     model = KMeans(
         n_clusters=k,
+        init=_deterministic_kmeans_init(scaled, k),
+        n_init=1,
         random_state=config.random_seed,
-        n_init=10,
+        algorithm="lloyd",
     )
     labels = model.fit_predict(scaled)
 

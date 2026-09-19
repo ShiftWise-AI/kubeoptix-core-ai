@@ -1,61 +1,45 @@
-# API REST — KubeOptix Core AI
+# REST API — KubeOptix Core AI
 
-A API HTTP é servida pelo `api.py` (FastAPI + Uvicorn). A documentação interativa
-está disponível em `/docs` (Swagger UI) e `/redoc` quando o servidor está em execução.
+The HTTP API is served by `api.py` (FastAPI + Uvicorn). The interactive documentation is available under `/docs` (Swagger UI) and `/redoc` while the server is running.
 
-## Como executar
+## Running the service
 
 ```bash
-KUBEOPTIX_METADATA_DIR=/path/to/metadata \
-KUBEOPTIX_OUTPUT_DIR=/path/to/reports \
-python api.py
+KUBEOPTIX_METADATA_DIR=/path/to/metadata KUBEOPTIX_OUTPUT_DIR=/path/to/reports python api.py
 ```
 
-O servidor usa `0.0.0.0:8000` por padrão. `KUBEOPTIX_API_HOST` e
-`KUBEOPTIX_API_PORT` alteram o endereço e a porta. Em container/OpenShift, os
-padrões são `/app/data/assessment` para os metadados e `/app/data/reports` para
-os relatórios. A documentação interativa fica em `/docs` e `/redoc`.
+The server binds to `0.0.0.0:8000` by default. `KUBEOPTIX_API_HOST` and `KUBEOPTIX_API_PORT` override the address and port. In containers or OpenShift, the defaults are `/app/data/assessment` for metadata and `/app/data/reports` for generated reports.
 
-## Estrutura dos dados
+## Data layout
 
-`KUBEOPTIX_METADATA_DIR` deve conter uma pasta por namespace e uma pasta
-`worknodes/` no próprio diretório ou no diretório pai. Cada namespace é validado
-com o padrão Kubernetes (`[a-z0-9.-]`) e pode conter os YAMLs coletados de
-controllers, pods, PodMetrics, serviços, rotas, ConfigMaps, PVCs, autoscalers,
-PDBs, eventos, logs e recursos OLM. O carregador correlaciona esses recursos
-antes da análise. A ausência de uma categoria não gera dados sintéticos; ela é
-registrada como limitação do relatório.
+`KUBEOPTIX_METADATA_DIR` must contain one folder per namespace and a `worknodes/` folder either under the same directory or in the parent directory. Each namespace is validated against the Kubernetes naming convention (`[a-z0-9.-]`) and may include YAMLs from controllers, pods, PodMetrics, services, routes, ConfigMaps, PVCs, autoscalers, PDBs, events, logs, and OLM resources. The loader correlates these resources before analysis. Missing categories are recorded as limitations rather than being fabricated.
 
-## Endpoints de saúde
+## Health endpoints
 
-| Método | Caminho | Descrição |
-|--------|---------|-----------|
+| Method | Path | Description |
+|--------|------|-------------|
 | `GET` | `/health/live` | Liveness probe |
 | `GET` | `/health/ready` | Readiness probe |
-| `GET` | `/health` | Status geral da aplicação |
+| `GET` | `/health` | Overall status |
 
-`/health/ready` verifica se o diretório de trabalho e `/tmp` são utilizáveis e,
-quando configurado, se o arquivo indicado por `MARK_DOWN_FILE` está disponível.
-Retorna `200` quando todos os checks estão `UP` e `503` caso contrário.
+`/health/ready` checks whether the working directory and `/tmp` are usable and, when configured, whether the file pointed to by `MARK_DOWN_FILE` is available. It returns `200` when all checks are `UP` and `503` otherwise.
 
-## Análise de namespaces
+## Namespace analysis
 
-| Método | Caminho | Descrição |
-|--------|---------|-----------|
-| `POST` | `/analysis` | Executa análise e gera relatórios Markdown |
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/analysis` | Runs the analysis and writes Markdown reports |
 
-### Diretórios de dados
+### Data directories
 
-| Variável | Padrão | Uso |
-|----------|--------|-----|
-| `KUBEOPTIX_METADATA_DIR` | `/app/data/assessment` | Metadados de namespaces e worknodes |
-| `KUBEOPTIX_OUTPUT_DIR` | `/app/data/reports` | Destino dos relatórios `.md` gerados |
+| Variable | Default | Usage |
+|----------|---------|-------|
+| `KUBEOPTIX_METADATA_DIR` | `/app/data/assessment` | Namespace and worknode metadata |
+| `KUBEOPTIX_OUTPUT_DIR` | `/app/data/reports` | Destination for generated `.md` reports |
 
 ### `POST /analysis`
 
-Executa a análise de **um ou mais namespaces** informados na requisição. Para cada
-namespace válido, gera um relatório Markdown em `KUBEOPTIX_OUTPUT_DIR`. O diretório de
-saída é criado automaticamente se não existir.
+Runs analysis for one or more namespaces provided in the request. For each valid namespace, it writes a Markdown report to `KUBEOPTIX_OUTPUT_DIR`. The output directory is created automatically if it does not exist.
 
 #### Request body
 
@@ -66,10 +50,10 @@ saída é criado automaticamente se não existir.
 }
 ```
 
-| Campo | Tipo | Obrigatório | Descrição |
-|-------|------|-------------|-----------|
-| `namespaces` | `string[]` | Sim | Lista com pelo menos um namespace |
-| `enable_ml` | `boolean` | Não | Ativa/desativa a camada ML local (padrão: variável de ambiente) |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `namespaces` | `string[]` | Yes | At least one namespace |
+| `enable_ml` | `boolean` | No | Enables or disables the local ML layer (default: environment variable) |
 
 #### Response `201 Created`
 
@@ -87,7 +71,7 @@ saída é criado automaticamente se não existir.
 }
 ```
 
-#### Múltiplos namespaces
+#### Multiple namespaces
 
 ```json
 {
@@ -95,42 +79,37 @@ saída é criado automaticamente se não existir.
 }
 ```
 
-Resposta com um relatório por namespace. O nome do arquivo é `<namespace>.md`
-(por exemplo, `example-ns-prd.md`).
+The response includes one report per namespace. Report filenames are `<namespace>.md` (for example, `example-ns-prd.md`).
 
-#### Erros
+#### Errors
 
-| HTTP | Situação | Exemplo de corpo |
-|------|----------|------------------|
-| `422` | Lista ausente, vazia ou com strings em branco | Validação Pydantic |
-| `400` | Nome de namespace inválido | `{"detail": {"message": "Nome de namespace inválido: ..."}}` |
-| `404` | Namespace inexistente em assessment | `{"detail": {"message": "...", "missing_namespaces": ["foo"]}}` |
-| `500` | Falha durante a análise | `{"detail": {"message": "..."}}` |
+| HTTP | Situation | Example body |
+|------|-----------|--------------|
+| `422` | Missing, empty, or blank namespace list | Pydantic validation |
+| `400` | Invalid namespace name | `{"detail": {"message": "Invalid namespace name: ..."}}` |
+| `404` | Namespace is not present in the assessment metadata | `{"detail": {"message": "...", "missing_namespaces": ["foo"]}}` |
+| `500` | Analysis failure | `{"detail": {"message": "..."}}` |
 
-#### Exemplo com `curl`
+#### Example with `curl`
 
 ```bash
-curl -sS -X POST "http://localhost:8000/analysis" \
-  -H "Content-Type: application/json" \
-  -d '{"namespaces": ["example-ns-prd", "other-ns-prd"], "enable_ml": false}'
+curl -sS -X POST "http://localhost:8000/analysis"   -H "Content-Type: application/json"   -d '{"namespaces": ["example-ns-prd", "other-ns-prd"], "enable_ml": false}'
 ```
 
-## Geração assíncrona com progresso
+## Asynchronous generation with progress
 
-O `POST /analysis` continua síncrono (a resposta só volta quando o `.md` está pronto).
-Para o frontend acompanhar uma barra de 0 a 100%, use o fluxo assíncrono:
+`POST /analysis` is synchronous: the response returns only after the `.md` file is written. To let a frontend display a 0–100% progress bar, use the asynchronous flow:
 
-| Método | Caminho | Descrição |
-|--------|---------|-----------|
-| `POST` | `/api/reports` | Inicia a análise em background e devolve `execution_id` |
-| `GET` | `/api/reports/{execution_id}/status` | Consulta progresso, estado e caminho do relatório |
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/reports` | Starts background analysis and returns `execution_id` |
+| `GET` | `/api/reports/{execution_id}/status` | Retrieves progress, status, and report path |
 
-O estado fica em memória no processo da API (adequado a uma única instância).
+The state lives in the API process memory (appropriate for a single-instance deployment).
 
 ### `POST /api/reports`
 
-Mesmo corpo do `POST /analysis`. A validação de namespaces ocorre na requisição
-inicial (404/400 iguais ao endpoint síncrono). A análise pesada corre em background.
+Uses the same body as `POST /analysis`. Namespace validation occurs in the initial request (same `404`/`400` behavior). The heavy analysis runs in the background.
 
 #### Response `202 Accepted`
 
@@ -144,112 +123,72 @@ inicial (404/400 iguais ao endpoint síncrono). A análise pesada corre em backg
 
 ### `GET /api/reports/{execution_id}/status`
 
-O frontend pode fazer polling a cada 1 ou 2 segundos. O campo `progress` é um
-inteiro `0 <= progress <= 100`. O valor `100` só aparece depois que o `.md`
-foi gravado.
+The frontend can poll every 1–2 seconds. The `progress` field is an integer `0 <= progress <= 100`. A value of `100` appears only after the `.md` file has been written.
 
-#### Em execução
+#### In progress
 
 ```json
 {
   "execution_id": "a1b2c3d4e5f6...",
   "status": "running",
   "progress": 45,
-  "message": "Analisando YAMLs",
+  "message": "Analyzing YAML files",
   "processed": 45,
   "total": 100,
   "report": null
 }
 ```
 
-#### Concluído
+#### Completed
 
 ```json
 {
   "execution_id": "a1b2c3d4e5f6...",
   "status": "completed",
   "progress": 100,
-  "message": "Relatório gerado com sucesso",
+  "message": "Report generated successfully",
   "processed": 100,
   "total": 100,
   "report": "/app/data/reports/example-ns-prd.md"
 }
 ```
 
-#### Erro
+#### Error
 
 ```json
 {
   "execution_id": "a1b2c3d4e5f6...",
   "status": "error",
   "progress": 67,
-  "message": "Erro durante a análise dos YAMLs",
+  "message": "Error during YAML analysis",
   "processed": 40,
   "total": 60,
   "report": null,
-  "error": "mensagem do erro"
+  "error": "error message"
 }
 ```
 
-Estados possíveis: `pending`, `running`, `completed`, `error`.
+Possible states: `pending`, `running`, `completed`, `error`.
 
-#### Como o progresso é calculado
+#### How progress is calculated
 
-Marcos por namespace, sobre o pipeline real (sem valores artificiais):
+Breakpoints by namespace, over the real pipeline (without synthetic values):
 
-| Progresso local | Etapa |
-|-----------------|-------|
-| 0% | execução iniciada |
-| 10% | YAMLs identificados (`scan_namespace_files`) |
-| 20%–70% | leitura/parse de cada YAML (`(processados / total) * 50`) |
-| 70%–80% | análise determinística (e ML, se ativa) |
-| 90% | geração do Markdown |
-| 100% | arquivo `.md` gravado |
+| Local progress | Stage |
+|---------------|-------|
+| 0% | execution started |
+| 10% | YAML files identified (`scan_namespace_files`) |
+| 20%–70% | read/parse of each YAML (`(processed / total) * 50`) |
+| 70%–80% | deterministic analysis (and ML, if enabled) |
+| 90% | Markdown generation |
+| 100% | `.md` file written |
 
-Com vários namespaces, cada um ocupa uma fatia igual de 0–100.
+With multiple namespaces, each namespace receives an equal slice of the overall 0–100 range.
 
-#### Exemplo com `curl`
+#### Example with `curl`
 
 ```bash
-EXEC_ID=$(curl -sS -X POST "http://localhost:8000/api/reports" \
-  -H "Content-Type: application/json" \
-  -d '{"namespaces": ["example-ns-prd"], "enable_ml": false}' \
-  | python -c 'import json,sys; print(json.load(sys.stdin)["execution_id"])')
+EXEC_ID=$(curl -sS -X POST "http://localhost:8000/api/reports"   -H "Content-Type: application/json"   -d '{"namespaces": ["example-ns-prd"], "enable_ml": false}'   | python -c 'import json,sys; print(json.load(sys.stdin)["execution_id"])')
 
 curl -sS "http://localhost:8000/api/reports/${EXEC_ID}/status"
 ```
-
-## Gerenciamento de relatórios
-
-Os relatórios são arquivos Markdown em `KUBEOPTIX_OUTPUT_DIR`. A exclusão
-também remove a pasta de assets correspondente (`<namespace>_assets`) quando
-ela existe.
-
-| Método | Caminho | Descrição |
-|--------|---------|-----------|
-| `DELETE` | `/api/reports` | Remove o relatório indicado no corpo |
-| `DELETE` | `/api/reports/{filename}` | Remove o relatório indicado no path |
-
-### `DELETE /api/reports`
-
-```json
-{
-  "nome_do_arquivo": "example-ns-prd.md"
-}
-```
-
-O nome deve ser um arquivo `.md`, sem diretórios ou `..`. A API retorna `422`
-para nomes inválidos, `404` quando o relatório não existe e `200` quando a
-remoção é concluída.
-
-```json
-{
-  "status": "SUCCESS",
-  "report": "/app/data/reports/example-ns-prd.md",
-  "assets": "/app/data/reports/example-ns-prd_assets",
-  "deleted_assets": true
-}
-```
-
-O caminho sem o prefixo `/api` (`/reports`) também existe para compatibilidade,
-mas não aparece no schema OpenAPI público.

@@ -21,11 +21,15 @@ def parse_configmap(file_path: Path, *, app_group: str | None = None) -> ConfigM
     data = document.get("data") or {}
     binary_data = document.get("binaryData") or {}
 
-    keys: list[str] = []
+    normalized_data: dict[str, str] = {}
     if isinstance(data, dict):
-        keys.extend(sorted(str(k) for k in data.keys()))
+        for key, value in data.items():
+            normalized_data[str(key)] = "" if value is None else str(value)
     if isinstance(binary_data, dict):
-        keys.extend(sorted(str(k) for k in binary_data.keys()))
+        for key, value in binary_data.items():
+            normalized_data[str(key)] = "" if value is None else str(value)
+
+    keys: list[str] = list(normalized_data.keys())
 
     labels = metadata.get("labels") or {}
     group = app_group
@@ -37,5 +41,6 @@ def parse_configmap(file_path: Path, *, app_group: str | None = None) -> ConfigM
         namespace=str(metadata.get("namespace", "")),
         app_group=group,
         keys=tuple(sorted(set(keys))),
+        data=normalized_data,
         source=source,
     )

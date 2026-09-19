@@ -98,7 +98,7 @@ class AnalysisEngine:
         self,
         namespace: str,
         *,
-        enable_ml: bool | None = None,
+        enable_ml: bool | None = True,
     ) -> AnalysisReport:
         return self.analyze_namespace_full(namespace, enable_ml=enable_ml).report
 
@@ -106,7 +106,7 @@ class AnalysisEngine:
         self,
         namespace: str,
         *,
-        enable_ml: bool | None = None,
+        enable_ml: bool | None = True,
     ) -> NamespaceAnalysisResult:
         bundle = self._workload_loader.load_namespace(namespace)
         node_bundle = self._worknode_loader.load()
@@ -121,7 +121,7 @@ class AnalysisEngine:
         bundle: NamespaceWorkloadBundle,
         nodes: tuple[WorkNode, ...],
         *,
-        enable_ml: bool | None = None,
+        enable_ml: bool | None = True,
         on_analysis_step: Callable[[int, int, str], None] | None = None,
     ) -> NamespaceAnalysisResult:
         ctx = AnalysisContext(bundle=bundle, nodes=nodes)

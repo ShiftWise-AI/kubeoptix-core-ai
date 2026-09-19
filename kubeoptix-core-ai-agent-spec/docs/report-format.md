@@ -1,145 +1,145 @@
-# Padrão do Relatório de Assessment
+# Assessment Report Standard
 
-## Objetivo
+## Objective
 
-Gerar um relatório Markdown em português do Brasil para o namespace analisado.
+Generate a Markdown report in American English for the analyzed namespace.
 
-O relatório de referência deve ser inspecionado pelo agente para reproduzir seu nível de organização, linguagem, tabelas e profundidade.
+The reference report should be inspected by the agent to reproduce its organization, tone, tables, and depth.
 
-Ele é referência estrutural e metodológica, não fonte de dados para outros namespaces.
+It is a structural and methodological reference, not a source of data for other namespaces.
 
-## Estrutura mínima
+## Minimum structure
 
 ```markdown
-# Assessment de Workload
+# Workload Assessment
 
-## 1. Sumário Executivo
+## 1. Executive Summary
 
-## 2. Escopo da Análise
+## 2. Scope of Analysis
 
-## 3. Fontes de Dados
+## 3. Data Sources
 
-## 4. Visão Geral do Namespace
+## 4. Namespace Overview
 
-## 5. Workloads Identificados
+## 5. Identified Workloads
 
-## 6. Análise de CPU
+## 6. CPU Analysis
 
-## 7. Análise de Memória
+## 7. Memory Analysis
 
-## 8. Análise de QoS
+## 8. QoS Analysis
 
-## 9. Análise de Réplicas
+## 9. Replica Analysis
 
-## 10. Análise de Probes
+## 10. Probe Analysis
 
-## 11. Análise de Scheduling
+## 11. Scheduling Analysis
 
-## 12. Análise de Storage
+## 12. Storage Analysis
 
 ## 13. Events
 
-## 14. Atualização de Operators (OLM)
+## 14. Operator Update (OLM)
 
-## 15. Correlação Workload × Worknode
+## 15. Workload × Worknode Correlation
 
-## 16. Anomalias Identificadas
+## 16. Identified Anomalies
 
 ## 17. Findings
 
-## 18. Oportunidades de Otimização
+## 18. Optimization Opportunities
 
-## 19. Riscos
+## 19. Risks
 
-## 20. Recomendações
+## 20. Recommendations
 
-## 21. Conclusão
+## 21. Conclusion
 
-## 22. Limitações da Análise
+## 22. Analysis Limitations
 ```
 
-A estrutura pode ser adaptada após inspeção do relatório de referência.
+The structure may be adapted after inspection of the reference report.
 
-## Regras de redação
+## Writing rules
 
-- Escrever em pt-BR.
-- Ser técnico e objetivo.
-- Não utilizar linguagem alarmista.
-- Não apresentar inferências como fatos.
-- Diferenciar claramente evidência, análise e recomendação.
-- Informar ausência de dados.
-- Evitar recomendações genéricas.
-- Priorizar recomendações acionáveis.
+- Write in English (US).
+- Be technical and objective.
+- Do not use alarmist language.
+- Do not present inferences as facts.
+- Clearly distinguish evidence, analysis, and recommendation.
+- State missing data explicitly.
+- Avoid generic recommendations.
+- Prioritize actionable recommendations.
 
-## Modelo de finding
+## Finding model
 
 ```markdown
-### RES-CPU-001 — Request de CPU elevado
+### RES-CPU-001 — Elevated CPU request
 
-**Severidade:** HIGH
+**Severity:** HIGH
 
-**Confiança:** HIGH
+**Confidence:** HIGH
 
-**Workload:** exemplo
+**Workload:** example
 
-**Evidências:**
+**Evidence:**
 
 - CPU request: `2000m`
 - CPU limit: `4000m`
-- Réplicas: `3`
-- Origem: `arquivo.yaml`
+- Replicas: `3`
+- Source: `file.yaml`
 
-**Análise:**
+**Analysis:**
 
-O workload possui 6000m de CPU solicitada considerando as três réplicas.
+The workload requires 6000m of CPU across three replicas.
 
-**Impacto potencial:**
+**Potential impact:**
 
-A configuração pode reservar parcela significativa da capacidade disponível.
+This configuration may reserve a significant share of available cluster capacity.
 
-**Recomendação:**
+**Recommendation:**
 
-Avaliar o dimensionamento do CPU request com base em métricas reais de utilização.
+Evaluate the CPU request sizing based on real usage metrics.
 
-**Limitação:**
+**Limitation:**
 
-Não há métrica de CPU usage disponível nos dados analisados.
+No CPU usage data is available in the analyzed inputs.
 ```
 
-## Regras de números
+## Number rules
 
-- CPU deve preservar unidades como `m` quando apropriado.
-- Memória deve preservar unidades como `Mi`/`Gi`.
-- Não arredondar valores de forma que altere a interpretação.
-- Totais calculados devem indicar que são derivados.
-- Nunca inventar valores ausentes.
+- CPU values should preserve units like `m` when appropriate.
+- Memory values should preserve units such as `Mi` and `Gi`.
+- Do not round values in a way that changes the interpretation.
+- Derived totals should indicate that they are calculated values.
+- Never invent missing values.
 
-## Métricas de runtime
+## Runtime metrics
 
-Se não existirem dados de runtime, não criar:
+If runtime data is not available, do not create:
 
 - CPU usage;
 - memory usage;
 - throttling;
 - OOMKilled;
 - restart count;
-- latência;
+- latency;
 - throughput.
 
-Nesse caso, declarar a limitação.
+In that case, explicitly state the limitation.
 
-## Rastreamento da origem
+## Source traceability
 
-Findings relevantes devem apontar a origem do dado sempre que possível.
+Relevant findings should point to the data origin whenever possible.
 
-A implementação deve preservar metadados de origem durante parsing e normalização.
+The implementation must preserve source metadata throughout parsing and normalization.
 
-## Nome do arquivo
+## File name
 
-O relatório deve ser salvo como:
+The report should be saved as:
 
 `<namespace>.md`
 
-Exemplo:
+Example:
 
-`meu-namespace-prd.md`
+`my-namespace-prd.md`
