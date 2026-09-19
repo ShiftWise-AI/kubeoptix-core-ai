@@ -1,7 +1,17 @@
 # Configuração visual KubeDiagrams (formato nativo 0.8.0).
 # Agrupa por categoria de inventário (não por labels Helm/app) e define
 # recursos OpenShift com relações extraídas apenas dos campos YAML.
-# Paleta D — corporativa Red Hat (vermelho, preto, cinzas, navy).
+#
+# Paleta única do relatório (compartilhada com os gráficos matplotlib em
+# chart_theme.py): cada domínio arquitetural recebe uma cor distinta e
+# consistente em todos os diagramas, sem tons próximos entre categorias
+# não relacionadas (ex.: Workloads e Nodes não usam mais o mesmo vermelho).
+#   Workloads    -> azul       (domínio central: controllers e HPA/PDB)
+#   Pods         -> azul-claro (sub-agrupamento de Workloads)
+#   Networking   -> verde      (Service/Route/Ingress/NetworkPolicy)
+#   Storage      -> âmbar      (PV/PVC/StorageClass)
+#   Configuration-> cinza      (ConfigMap/Secret/ServiceAccount, menor destaque)
+#   Nodes        -> lilás      (infraestrutura de cluster)
 
 edges:
   REFERENCE:
@@ -56,50 +66,68 @@ clusters:
     title: "{}"
     recommended: true
     graph_attr:
-      bgcolor: "#F5D0CD"
-      pencolor: "#C9190B"
+      bgcolor: "#DCEEFB"
+      pencolor: "#004B95"
       style: rounded
-      fontcolor: "#C9190B"
+      fontcolor: "#004B95"
+      fontsize: "13"
+      fontname: Helvetica-Bold
+      penwidth: "1.6"
   - label: kubeoptix.io/cat-pods
     title: "{}"
     recommended: true
     graph_attr:
-      bgcolor: "#E8E8E8"
-      pencolor: "#151515"
+      bgcolor: "#EEF6FC"
+      pencolor: "#0066CC"
       style: rounded
-      fontcolor: "#151515"
+      fontcolor: "#0066CC"
+      fontsize: "12"
+      fontname: Helvetica
+      penwidth: "1.2"
   - label: kubeoptix.io/cat-config
     title: "{}"
     recommended: true
     graph_attr:
-      bgcolor: "#F0F0F0"
+      bgcolor: "#EDEDED"
       pencolor: "#4D4D4D"
       style: rounded
       fontcolor: "#4D4D4D"
+      fontsize: "12"
+      fontname: Helvetica
+      penwidth: "1.2"
   - label: kubeoptix.io/cat-storage
     title: "{}"
     recommended: true
     graph_attr:
-      bgcolor: "#D6E4F0"
-      pencolor: "#002F5D"
+      bgcolor: "#FBEED4"
+      pencolor: "#C58C00"
       style: rounded
-      fontcolor: "#002F5D"
+      fontcolor: "#C58C00"
+      fontsize: "12"
+      fontname: Helvetica
+      penwidth: "1.2"
   - label: kubeoptix.io/cat-networking
     title: "{}"
     recommended: true
     graph_attr:
-      bgcolor: "#D2D2D2"
-      pencolor: "#6A6E73"
+      bgcolor: "#E1F0DF"
+      pencolor: "#38812F"
       style: rounded
-      fontcolor: "#6A6E73"
+      fontcolor: "#38812F"
+      fontsize: "12"
+      fontname: Helvetica
+      penwidth: "1.2"
   - label: kubeoptix.io/cat-nodes
     title: "{}"
     recommended: true
     graph_attr:
-      bgcolor: "#F2C7C3"
-      pencolor: "#7D1007"
+      bgcolor: "#E9E3F5"
+      pencolor: "#3C3D99"
       style: rounded
-      fontcolor: "#7D1007"
+      fontcolor: "#3C3D99"
+      fontsize: "12"
+      fontname: Helvetica
+      penwidth: "1.2"
 
 nodes:
   Endpoints/v1:
