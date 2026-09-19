@@ -501,9 +501,9 @@ def test_tune_dot_layout_architecture_profile_uses_high_resolution_layout() -> N
     )
     tuned = renderer._tune_dot_layout(source, layout_profile="architecture")
     assert "dpi=120" in tuned
-    assert "splines=polyline" in tuned
+    assert "splines=ortho" in tuned
     assert "nodesep=0.45" in tuned
-    assert "ranksep=0.85" in tuned
+    assert "ranksep=1.0" in tuned
     assert 'size="16.0,6.5"' in tuned
     assert "rankdir=TB" in tuned
     assert "rankdir=LR" not in tuned

@@ -85,12 +85,20 @@ def render_visualization_block(viz: VisualizationSpec) -> str:
 
     if viz.image_relpath:
         if viz.diagram_engine == "kubediagrams":
+            is_wide = viz.id in WIDE_DIAGRAM_VIZ_IDS or viz.id.startswith(
+                PROPOSED_NAMESPACE_VIZ_PREFIX
+            )
+            layout_note = (
+                "Leitura em faixas horizontais (paisagem, largura de página): "
+                "Workloads, Configuration, Storage, Networking, Nodes."
+                if is_wide
+                else "Leitura da esquerda para a direita, seguindo o fluxo de comunicação."
+            )
             lines.append(
                 "_Diagrama gerado a partir dos manifests YAML listados abaixo. "
                 "Cores: Workloads (azul), Pods (azul-claro), Configuration (cinza), "
                 "Storage (âmbar), Networking (verde), Nodes (lilás). "
-                "Leitura em faixas horizontais (paisagem, largura de página): "
-                "Workloads, Configuration, Storage, Networking, Nodes. "
+                f"{layout_note} "
                 "Pods equivalentes são agrupados com o rótulo `nome (N replicas)`. "
                 "Services exibem a porta (`nome:8000`)._"
             )

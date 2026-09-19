@@ -16,19 +16,33 @@ WIDE_DIAGRAM_VIZ_IDS = frozenset(
     {NAMESPACE_ARCHITECTURE_VIZ_ID, WORKLOAD_NODE_PLACEMENT_VIZ_ID}
 )
 
-# Gráficos matplotlib: compactos para edição do Markdown.
+# DPI único para todos os PNGs do relatório (gráficos matplotlib e diagramas
+# Graphviz/KubeDiagrams), garantindo a mesma densidade visual entre eles.
 REPORT_IMAGE_DPI = 120
+
+# Gráficos matplotlib: compactos para edição do Markdown.
 REPORT_CHART_MAX_WIDTH_PX = CHART_MAX_WIDTH
 REPORT_CHART_MAX_HEIGHT_PX = 420
 
+# Convenção visual única para diagramas Graphviz/KubeDiagrams (perfis "diagram"
+# e "architecture"): mesma fonte, espaçamento e roteamento ortogonal de
+# arestas, variando apenas a largura de página conforme o volume de conteúdo.
+REPORT_DIAGRAM_NODESEP = "0.45"
+REPORT_DIAGRAM_RANKSEP = "1.0"
+REPORT_DIAGRAM_FONTSIZE = "12"
+REPORT_DIAGRAM_LABELFONTSIZE = "11"
+REPORT_DIAGRAM_SPLINES = "ortho"
+
 # Diagramas de comunicação/workload: horizontais e moderados.
+REPORT_DIAGRAM_PAGE_WIDTH_IN = 9.0
+REPORT_DIAGRAM_PAGE_HEIGHT_IN = 5.0
 REPORT_DIAGRAM_MAX_WIDTH_PX = 960
 REPORT_DIAGRAM_MAX_HEIGHT_PX = 540
 REPORT_DIAGRAM_MIN_ASPECT_RATIO = 1.25
 
 # Arquitetura e placement: paisagem em largura de página (A4 landscape ~160 mm).
 # size Graphviz em polegadas; dpi 120 evita PNGs gigantes ilegíveis ao reduzir.
-REPORT_ARCHITECTURE_DPI = 120
+REPORT_ARCHITECTURE_DPI = REPORT_IMAGE_DPI
 REPORT_ARCHITECTURE_PAGE_WIDTH_IN = 16.0
 REPORT_ARCHITECTURE_PAGE_HEIGHT_IN = 6.5
 REPORT_ARCHITECTURE_MAX_WIDTH_PX = 1600

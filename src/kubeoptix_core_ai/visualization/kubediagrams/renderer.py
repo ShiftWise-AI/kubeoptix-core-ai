@@ -21,6 +21,13 @@ from kubeoptix_core_ai.visualization.png.export_config import (
     REPORT_ARCHITECTURE_DPI,
     REPORT_ARCHITECTURE_PAGE_HEIGHT_IN,
     REPORT_ARCHITECTURE_PAGE_WIDTH_IN,
+    REPORT_DIAGRAM_FONTSIZE,
+    REPORT_DIAGRAM_LABELFONTSIZE,
+    REPORT_DIAGRAM_NODESEP,
+    REPORT_DIAGRAM_PAGE_HEIGHT_IN,
+    REPORT_DIAGRAM_PAGE_WIDTH_IN,
+    REPORT_DIAGRAM_RANKSEP,
+    REPORT_DIAGRAM_SPLINES,
     REPORT_IMAGE_DPI,
     LayoutProfile,
     layout_profile_for_output,
@@ -211,61 +218,37 @@ def _ensure_root_layout_attrs(
     *,
     layout_profile: LayoutProfile = "diagram",
 ) -> str:
+    """Aplica a convenção visual única (fonte, espaçamento, roteamento) a
+    ambos os perfis de diagrama, variando apenas orientação e tamanho de
+    página conforme o volume de conteúdo."""
     match = re.search(r"(?m)^(\tgraph \[)([^\]]*)(\])", dot_source)
     if match is None:
         return dot_source
     body = match.group(2)
-    dpi = REPORT_ARCHITECTURE_DPI if layout_profile == "architecture" else REPORT_IMAGE_DPI
-    if layout_profile == "architecture":
-        replacements = {
-            "compound": "true",
-            "newrank": "true",
-            "rankdir": "TB",
-            "margin": "0",
-            "pad": "0.12",
-            "dpi": str(dpi),
-            "splines": "polyline",
-            "nodesep": "0.45",
-            "ranksep": "0.85",
-            "fontsize": "12",
-            "labelfontsize": "11",
-            "overlap": "false",
-            "ratio": "compress",
-            "size": (
-                f'"{REPORT_ARCHITECTURE_PAGE_WIDTH_IN},'
-                f'{REPORT_ARCHITECTURE_PAGE_HEIGHT_IN}"'
-            ),
-        }
-        for key, value in replacements.items():
-            body = _upsert_graph_attr(body, key, value)
-        return (
-            dot_source[: match.start(2)]
-            + body
-            + dot_source[match.end(2) :]
-        )
-
-    additions: list[str] = []
-    if "compound=" not in body:
-        additions.append("compound=true")
-    if "newrank=" not in body:
-        additions.append("newrank=true")
-    if "rankdir=" not in body:
-        additions.append("rankdir=LR")
-    if "margin=" not in body:
-        additions.append("margin=0")
-    if "pad=" not in body:
-        additions.append("pad=0.05")
-    if "dpi=" not in body:
-        additions.append(f"dpi={dpi}")
-    if not additions:
-        return dot_source
-    return (
-        dot_source[: match.start(2)]
-        + body
-        + " "
-        + " ".join(additions)
-        + dot_source[match.end(2) :]
-    )
+    is_architecture = layout_profile == "architecture"
+    page_width = REPORT_ARCHITECTURE_PAGE_WIDTH_IN if is_architecture else REPORT_DIAGRAM_PAGE_WIDTH_IN
+    page_height = REPORT_ARCHITECTURE_PAGE_HEIGHT_IN if is_architecture else REPORT_DIAGRAM_PAGE_HEIGHT_IN
+    replacements = {
+        "compound": "true",
+        "newrank": "true",
+        "rankdir": "TB" if is_architecture else "LR",
+        "margin": "0",
+        "pad": "0.12" if is_architecture else "0.08",
+        "dpi": str(REPORT_ARCHITECTURE_DPI if is_architecture else REPORT_IMAGE_DPI),
+        "splines": REPORT_DIAGRAM_SPLINES,
+        "nodesep": REPORT_DIAGRAM_NODESEP,
+        "ranksep": REPORT_DIAGRAM_RANKSEP,
+        "forcelabels": "true",
+        "fontsize": REPORT_DIAGRAM_FONTSIZE,
+        "labelfontsize": REPORT_DIAGRAM_LABELFONTSIZE,
+        "fontname": "Helvetica",
+        "overlap": "false",
+        "ratio": "compress",
+        "size": f'"{page_width},{page_height}"',
+    }
+    for key, value in replacements.items():
+        body = _upsert_graph_attr(body, key, value)
+    return dot_source[: match.start(2)] + body + dot_source[match.end(2) :]
 
 
 def _relax_inter_cluster_edges(dot_source: str, membership: dict[str, str]) -> str:
@@ -306,19 +289,6 @@ def _sequence_category_clusters_horizontally(dot_source: str) -> str:
     if not ordered_parts:
         return dot_source
     return dot_source[:first] + "\n".join(ordered_parts) + "\n" + dot_source[last:]
-
-
-def _prefer_polyline_edge_routing(dot_source: str) -> str:
-    """Aplica splines=polyline em arestas sem estilo explícito (leitura mais limpa)."""
-
-    def _replace(match: re.Match[str]) -> str:
-        attrs = match.group(2)
-        if "splines=" in attrs or "style=invis" in attrs:
-            return match.group(0)
-        attrs += " splines=polyline"
-        return match.group(1) + attrs + match.group(3)
-
-    return _DOT_EDGE_RE.sub(_replace, dot_source)
 
 
 def _rank_wrap_lines(node_ids: list[str]) -> list[str]:
@@ -1156,16 +1126,14 @@ class KubeDiagramsRenderer:
 
     def _dot_png_graph_args(self, output_path: Path) -> list[str]:
         profile = layout_profile_for_output(output_path)
-        if profile != "architecture":
-            return []
+        is_architecture = profile == "architecture"
+        width = REPORT_ARCHITECTURE_PAGE_WIDTH_IN if is_architecture else REPORT_DIAGRAM_PAGE_WIDTH_IN
+        height = REPORT_ARCHITECTURE_PAGE_HEIGHT_IN if is_architecture else REPORT_DIAGRAM_PAGE_HEIGHT_IN
         return [
-            (
-                f"-Gsize={REPORT_ARCHITECTURE_PAGE_WIDTH_IN},"
-                f"{REPORT_ARCHITECTURE_PAGE_HEIGHT_IN}"
-            ),
+            f"-Gsize={width},{height}",
             f"-Gdpi={REPORT_ARCHITECTURE_DPI}",
             "-Gratio=compress",
-            "-Grankdir=TB",
+            f"-Grankdir={'TB' if is_architecture else 'LR'}",
         ]
 
     def _dot_icon_volume_args(self, dot_source: str) -> list[str]:
