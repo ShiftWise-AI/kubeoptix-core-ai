@@ -97,12 +97,18 @@ def test_start_report_returns_immediately_with_pending(
     _wait_terminal(reports_client, body["execution_id"])
 
 
+def test_analysis_request_enables_ml_by_default() -> None:
+    request = api.AnalysisRequest(namespaces=[EXAMPLE_NAMESPACE])
+
+    assert request.enable_ml is True
+
+
 def test_report_status_polls_until_markdown_exists(
     reports_client: TestClient,
 ) -> None:
     started = reports_client.post(
         "/api/reports",
-        json={"namespaces": [EXAMPLE_NAMESPACE], "enable_ml": False},
+        json={"namespaces": [EXAMPLE_NAMESPACE], "enable_ml": True},
     )
     execution_id = started.json()["execution_id"]
 

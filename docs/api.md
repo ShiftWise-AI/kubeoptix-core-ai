@@ -109,7 +109,7 @@ The state lives in the API process memory (appropriate for a single-instance dep
 
 ### `POST /api/reports`
 
-Uses the same body as `POST /analysis`. Namespace validation occurs in the initial request (same `404`/`400` behavior). The heavy analysis runs in the background.
+Uses the same body as `POST /analysis`. Namespace validation occurs in the initial request (same `404`/`400` behavior). The heavy analysis runs in the background. When `enable_ml` is omitted, it defaults to `true`.
 
 #### Response `202 Accepted`
 

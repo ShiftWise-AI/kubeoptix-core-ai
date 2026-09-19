@@ -50,7 +50,7 @@ The project uses a **Containerfile** (UBI 10). With `build.enabled=true`, the ch
 ./install.sh -f ./my-values.yaml
 ```
 
-After `oc start-build --wait`, the script waits for the `ImageStreamTag` from the BuildConfig before restarting the StatefulSet, which reduces pull failures such as `manifest unknown`.
+After `oc start-build --wait`, the script waits for the `ImageStreamTag` from the BuildConfig before restarting the StatefulSet, which reduces pull failures such as `manifest unknown`. When `image.useBuildOutput=true`, the pod template also watches that `ImageStreamTag`, so later successful builds trigger a rollout automatically.
 
 Manual rebuild:
 
