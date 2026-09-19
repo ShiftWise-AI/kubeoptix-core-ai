@@ -118,11 +118,11 @@ class AnalysisRequest(BaseModel):
         description="Lista com um ou mais namespaces a analisar.",
         examples=[["example-ns-prd"], ["example-ns-prd", "other-ns-prd"]],
     )
-    enable_ml: bool | None = Field(
-        default=None,
+    enable_ml: bool = Field(
+        default=True,
         description=(
             "Ativa ou desativa a camada ML local. "
-            "Quando omitido, usa a configuração de ambiente."
+            "Quando omitido, a camada ML permanece ativada."
         ),
     )
 

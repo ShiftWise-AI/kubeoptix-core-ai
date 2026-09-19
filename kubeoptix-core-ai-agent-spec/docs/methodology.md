@@ -1,35 +1,35 @@
-# Metodologia de Análise de Workloads OpenShift
+# OpenShift Workload Analysis Methodology
 
-## 1. Princípios
+## 1. Principles
 
-A análise deve combinar quatro camadas:
+The analysis should combine four layers:
 
-1. Dados observados
-2. Análise determinística
-3. Análise estatística / Machine Learning local
-4. Recomendações
+1. Observed data
+2. Deterministic analysis
+3. Statistical / local machine learning analysis
+4. Recommendations
 
-A saída deve permitir distinguir claramente fatos, inferências e recomendações.
+The output should clearly distinguish facts, inferences, and recommendations.
 
-## 2. Descoberta dos dados
+## 2. Data discovery
 
-Antes da implementação de qualquer parser:
+Before implementing any parser:
 
-- listar a estrutura dos diretórios;
-- identificar namespaces;
-- identificar formatos de arquivos;
-- examinar amostras representativas;
-- identificar campos disponíveis;
-- identificar campos ausentes;
-- analisar o relatório de referência.
+- list directory structure;
+- identify namespaces;
+- identify file formats;
+- review representative samples;
+- identify available fields;
+- identify missing fields;
+- analyze the reference report.
 
-Os arquivos reais são a autoridade sobre o formato dos dados.
+The real files are the authority on data format.
 
-## 3. Normalização
+## 3. Normalization
 
-Converter os dados encontrados para modelos internos padronizados.
+Convert discovered data into standardized internal models.
 
-Um workload deve poder representar, quando disponíveis:
+A workload should be able to represent, when available:
 
 - namespace;
 - name;
@@ -38,91 +38,91 @@ Um workload deve poder representar, quando disponíveis:
 - containers;
 - CPU request;
 - CPU limit;
-- memória request;
-- memória limit;
+- memory request;
+- memory limit;
 - probes;
 - QoS;
 - scheduling;
 - volumes;
 - labels;
-- metadados;
-- origem dos dados.
+- metadata;
+- data source.
 
-Um worknode deve poder representar:
+A worknode should be able to represent:
 
-- nome;
+- name;
 - CPU capacity;
 - CPU allocatable;
-- memória capacity;
-- memória allocatable;
+- memory capacity;
+- memory allocatable;
 - labels;
 - taints;
-- arquitetura;
-- demais atributos disponíveis.
+- architecture;
+- any other relevant attributes.
 
-## 4. Análise de recursos
+## 4. Resource analysis
 
 ### CPU
 
-Avaliar:
+Evaluate:
 
 - requests;
 - limits;
-- soma por workload;
-- soma por namespace;
-- relação request/limit;
-- proporção em relação ao allocatable dos workers;
-- potenciais excessos ou insuficiências de configuração.
+- total per workload;
+- total per namespace;
+- request/limit ratio;
+- share of worker allocatable capacity;
+- potential over-allocation or under-sizing.
 
-Nunca chamar request de "uso".
+Never call a request a "usage" value.
 
-### Memória
+### Memory
 
-Avaliar:
+Evaluate:
 
 - requests;
 - limits;
-- soma por workload;
-- soma por namespace;
-- relação request/limit;
-- proporção em relação ao allocatable.
+- total per workload;
+- total per namespace;
+- request/limit ratio;
+- proportion of worker allocatable capacity.
 
-Não inferir OOMKilled sem evidência de eventos ou métricas.
+Do not infer OOMKilled without evidence from events or metrics.
 
 ## 5. QoS
 
-Quando os dados permitirem, classificar:
+When data allows, classify:
 
 - Guaranteed;
 - Burstable;
 - BestEffort.
 
-Explicar o impacto da classificação sem exagerar conclusões.
+Explain classification impact without overstating conclusions.
 
-## 6. Réplicas
+## 6. Replicas
 
-Avaliar:
+Evaluate:
 
-- número de réplicas;
-- workloads com uma réplica;
-- quantidade de réplicas por workload;
-- concentração potencial.
+- replica count;
+- workloads with a single replica;
+- replica concentration by workload;
+- potential resilience concerns.
 
-Uma única réplica pode ser um risco potencial, mas não deve ser descrita como indisponibilidade efetiva sem evidência.
+A single replica may be a risk signal, but it must not be described as effective unavailability without evidence.
 
 ## 7. Probes
 
-Avaliar:
+Evaluate:
 
 - readinessProbe;
 - livenessProbe;
 - startupProbe.
 
-Identificar ausência ou padrões incomuns quando os dados permitirem.
+Identify missing or unusual patterns when supported by the data.
 
 ## 8. Scheduling
 
-Avaliar:
+Evaluate:
 
 - nodeSelector;
 - nodeAffinity;
@@ -130,72 +130,72 @@ Avaliar:
 - podAntiAffinity;
 - tolerations;
 - topologySpreadConstraints;
-- outras configurações relevantes.
+- any other relevant configuration.
 
-Correlacionar restrições de scheduling com características dos worknodes quando houver dados suficientes.
+Correlate scheduling constraints with worknode characteristics when sufficient data exists.
 
 ## 9. Workload × Worknode
 
-Correlacionar:
+Correlate:
 
-- requests dos workloads;
-- número de réplicas;
-- características de scheduling;
-- capacidade dos workers;
-- capacidade allocatable.
+- workload requests;
+- replica counts;
+- scheduling characteristics;
+- worker capacity;
+- allocatable capacity.
 
-Possíveis findings:
+Possible findings:
 
-- requests incompatíveis com capacidade;
-- concentração;
-- distribuição desequilibrada;
-- capacidade potencialmente reservada em excesso;
-- dificuldade potencial de scheduling.
+- requests incompatible with capacity;
+- concentration;
+- uneven distribution;
+- potentially over-reserved capacity;
+- potential placement difficulty.
 
-Distinguir sempre capacidade reservada de consumo real.
+Always distinguish reserved capacity from actual consumption.
 
-## 10. Detecção de anomalias
+## 10. Anomaly detection
 
-Pode utilizar:
+This may use:
 
 - z-score;
 - IQR;
 - Isolation Forest;
 - clustering;
-- similaridade;
-- outras técnicas locais adequadas.
+- similarity;
+- other suitable local techniques.
 
-As features e thresholds devem ser documentados.
+Features and thresholds must be documented.
 
-Um outlier estatístico não é automaticamente um problema. Ele deve ser apresentado como sinal para investigação.
+A statistical outlier is not automatically a problem. It should be presented as an investigation signal.
 
-## 11. Similaridade
+## 11. Similarity
 
-Quando houver dados suficientes, comparar workloads semelhantes usando:
+When sufficient data exists, compare similar workloads using:
 
-- features estruturadas;
+- structured features;
 - TF-IDF;
-- embeddings locais;
-- distância estatística.
+- local embeddings;
+- statistical distance.
 
-Embeddings devem ser opcionais e executáveis em CPU.
+Embeddings should be optional and executable on CPU.
 
-Não utilizar similaridade semântica como prova de equivalência operacional.
+Do not use semantic similarity as proof of operational equivalence.
 
 ## 12. Scoring
 
-Cada finding pode possuir:
+Each finding may contain:
 
 - ID;
-- categoria;
-- severidade;
-- evidência;
-- impacto;
-- recomendação;
-- confiança;
-- fonte.
+- category;
+- severity;
+- evidence;
+- impact;
+- recommendation;
+- confidence;
+- source.
 
-Severidades sugeridas:
+Suggested severities:
 
 - CRITICAL
 - HIGH
@@ -203,92 +203,30 @@ Severidades sugeridas:
 - LOW
 - INFO
 
-Confiança:
+Confidence levels:
 
 - HIGH
 - MEDIUM
 - LOW
 
-## 13. Evidência
+## 13. Evidence
 
-Sempre que possível registrar:
+Whenever possible, record:
 
 - namespace;
 - workload;
 - container;
-- campo;
-- valor;
-- arquivo de origem.
+- field;
+- value;
+- source file/path;
+- observation timestamp when available.
 
-Exemplo:
+Findings must be traceable to artifacts or metadata.
 
-> CPU request configurado em 2000m, 3 réplicas, totalizando 6000m de CPU solicitada.
+## 14. Limitations
 
-## 14. Dados ausentes
+The assessment must declare missing data explicitly.
 
-Quando não houver informação:
+Do not fabricate fields, runtime metrics, or operational events that are not present in the input corpus.
 
-> Informação não disponível nos dados coletados.
-
-Para métricas de runtime ausentes:
-
-> A análise de utilização real não foi realizada devido à ausência de métricas de runtime nos dados disponíveis.
-
-## 15. IA local
-
-A IA deve ser opcional.
-
-Prioridade:
-
-1. regras determinísticas;
-2. estatística;
-3. detecção de anomalias;
-4. clustering;
-5. similaridade;
-6. embeddings locais.
-
-### Implementação (`src/kubeoptix_core_ai/ml/`)
-
-| Prioridade | Técnica | Módulo | Dependência |
-|------------|---------|--------|-------------|
-| 2 | z-score, IQR | `statistics.py` | stdlib (`statistics`) |
-| 3 | Isolation Forest | `anomalies.py` | scikit-learn |
-| 4 | K-Means | `clustering.py` | scikit-learn |
-| 5 | Similaridade de cosseno | `similarity.py` | numpy |
-| — | Comparação multivariada | `comparison.py` | numpy |
-| — | Extração de features | `features.py` | numpy |
-
-**Embeddings locais não implementados:** features são numéricas estruturadas
-(requests, limits, réplicas, probes, ratios usage/request). Similaridade
-semântica de nomes não prova equivalência operacional.
-
-**Bibliotecas adotadas e justificativa:**
-
-- `numpy` — matrizes de features e operações vetoriais leves
-- `scikit-learn` — Isolation Forest, K-Means, StandardScaler (CPU, `random_state`)
-
-**Bibliotecas avaliadas e descartadas:**
-
-- `pandas` — volume por namespace é pequeno; listas/numpy bastam
-- `sentence-transformers` / `FAISS` — não agregam valor frente a vetores de recursos
-- `TF-IDF` sobre YAML — não substitui comparação numérica de dimensionamento
-
-Reprodutibilidade: `KUBEOPTIX_ML_SEED` (padrão `42`); CLI `--ml-seed` e `--no-ml`.
-
-Não adicionar dependências sem justificar sua necessidade.
-
-## 16. Reprodutibilidade
-
-A mesma entrada deve produzir resultados consistentes.
-
-Algoritmos estocásticos devem possuir seed configurável.
-
-## 17. Limitações
-
-O relatório deve declarar claramente:
-
-- dados ausentes;
-- métricas não coletadas;
-- inferências;
-- limitações dos modelos;
-- limitações da correlação workload × worker.
+When a fact cannot be proved, call it an inference or a limitation.

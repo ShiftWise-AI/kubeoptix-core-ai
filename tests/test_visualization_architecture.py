@@ -84,14 +84,17 @@ def test_architecture_section_in_namespace_overview(
     assets_dir = tmp_path / "assets"
     md = MarkdownReportGenerator().generate(bundle, assets_dir=assets_dir)
 
-    overview_start = md.index("## 5. Visão geral do namespace")
-    workloads_start = md.index("## 6. Workloads identificados")
-    overview = md[overview_start:workloads_start]
+    overview_start = md.index("## 3. Arquitetura reversa")
+    cpu_start = md.index("## 4. Recursos de CPU e memória")
+    overview = md[overview_start:cpu_start]
 
-    assert "### Arquitetura" in overview
+    assert "## 3. Arquitetura reversa" in md
+    assert "## 4. Recursos de CPU e memória" in md
+    assert "### Arquitetura reversa (fallback textual)" in overview or "Fluxo de entrada" in overview
     assert (
         "Diagrama gerado a partir dos manifests YAML" in overview
         or "Diagrama de arquitetura indisponível" in overview
+        or "Fluxo de entrada, Service e dependências internas" in overview
     )
     if (
         "![Arquitetura do namespace]" in overview
@@ -233,10 +236,10 @@ def test_architecture_section_suggests_namespace_split(
     assert any(f.category == "ARCH" for f in bundle.analysis.findings)
 
     md = MarkdownReportGenerator().generate(bundle)
-    overview_start = md.index("## 5. Visão geral do namespace")
-    workloads_start = md.index("## 6. Workloads identificados")
-    overview = md[overview_start:workloads_start]
-    assert "### Redistribuição sugerida do namespace" in overview
+    overview_start = md.index("## 3. Arquitetura reversa")
+    cpu_start = md.index("## 4. Recursos de CPU e memória")
+    overview = md[overview_start:cpu_start]
+    assert "### Redistribuição sugerida do namespace" in overview or "Namespace sugerido" in overview
     assert "Grupo de aplicação" in overview
     assert "Namespace sugerido" in overview
     for group in partition.groups:

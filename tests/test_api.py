@@ -226,7 +226,7 @@ def test_analysis_single_namespace_success(assessment_client: TestClient) -> Non
     assert report["workloads_analyzed"] >= 1
     assert report["finding_count"] > 0
     assert Path(report["report_path"]).is_file()
-    assert report["report_path"].endswith(f"{EXAMPLE_NAMESPACE}.md")
+    assert report["report_path"].endswith(f"ml-{EXAMPLE_NAMESPACE}.md")
 
 
 def test_analysis_multiple_namespaces_success(assessment_client: TestClient) -> None:

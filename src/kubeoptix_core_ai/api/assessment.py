@@ -77,8 +77,9 @@ def dedupe_namespaces(namespaces: list[str]) -> list[str]:
 
 
 def build_report_filename(namespace: str) -> str:
-    """Monta nome de arquivo `<namespace>.md`."""
-    return f"{namespace}.md"
+    """Monta nome de arquivo `ml-<namespace>.md`."""
+    clean_namespace = namespace.removeprefix("ml-")
+    return f"ml-{clean_namespace}.md"
 
 
 class AssessmentService:
@@ -119,7 +120,7 @@ class AssessmentService:
         self,
         namespaces: list[str],
         *,
-        enable_ml: bool | None = None,
+        enable_ml: bool | None = True,
         progress: RunProgress | None = None,
     ) -> AnalysisRunResult:
         ordered = dedupe_namespaces(namespaces)

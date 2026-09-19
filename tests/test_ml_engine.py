@@ -92,6 +92,11 @@ def test_feature_matrix_shape() -> None:
     assert matrix.matrix.shape == (3, 14)
 
 
+def test_ml_defaults_to_enabled() -> None:
+    config = MLConfig()
+    assert config.enabled is True
+
+
 def test_ml_engine_produces_findings_with_enough_workloads() -> None:
     workloads = (
         _workload("api-small", cpu_req=100, mem_req=128, replicas=2),

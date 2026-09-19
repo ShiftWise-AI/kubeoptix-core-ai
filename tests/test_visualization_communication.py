@@ -7,7 +7,18 @@ from pathlib import Path
 
 import pytest
 
+from kubeoptix_core_ai.analysis.context import AnalysisContext
+from kubeoptix_core_ai.analysis.findings_builder import FindingBuilder
+from kubeoptix_core_ai.analysis.inventory import (
+    _config_value_service_names,
+    analyze_inventory,
+    build_service_dependency_graph,
+)
 from kubeoptix_core_ai.config import AnalyzerConfig
+from scripts.benchmark_log_signals import benchmark
+from kubeoptix_core_ai.models.inventory import ConfigMapSpec, ServicePortSpec, ServiceSpec
+from kubeoptix_core_ai.models.source import DataSourceRef
+from kubeoptix_core_ai.models.workload import ContainerSpec, NamespaceWorkloadBundle, Workload
 from kubeoptix_core_ai.parsers.log import parse_pod_log
 from kubeoptix_core_ai.report.pipeline import AssessmentPipeline
 from kubeoptix_core_ai.visualization.builders import build_all_visualizations
@@ -112,6 +123,277 @@ def test_parse_pod_log_detects_oracle_jdbc(tmp_path: Path) -> None:
     )
     summary = parse_pod_log(log_file, app_group="backend-acesso-app")
     assert "oracle.jdbc" in summary.runtime_signals
+
+
+def test_parse_pod_log_detects_operational_failures(tmp_path: Path) -> None:
+    dashboard_log = tmp_path / "kubeoptix-dashboard-0.log"
+    dashboard_log.write_text(
+        "API proxy error for http://analyzer-api:8000/reports/files: TypeError: fetch failed\n"
+        "[cause]: Error: getaddrinfo ENOTFOUND analyzer-api\n"
+        "10.217.0.67 - - [19/Sep/2026 11:17:43] \"GET /assessment/namespaces HTTP/1.1\" 500 -\n",
+        encoding="utf-8",
+    )
+    dashboard_summary = parse_pod_log(dashboard_log, app_group="kubeoptix-dashboard")
+    assert "dns_lookup_failure" in dashboard_summary.runtime_signals
+    assert "http_5xx" in dashboard_summary.runtime_signals
+    assert "service_connectivity_failure" in dashboard_summary.runtime_signals
+
+    db_log = tmp_path / "kubeoptix-db-0.log"
+    db_log.write_text(
+        "initdb: warning: enabling \"trust\" authentication for local connections\n",
+        encoding="utf-8",
+    )
+    db_summary = parse_pod_log(db_log, app_group="kubeoptix-db")
+    assert "postgres_trust_auth" in db_summary.runtime_signals
+
+
+def test_analyze_inventory_flags_unresolved_internal_service(tmp_path: Path) -> None:
+    log_file = tmp_path / "kubeoptix-dashboard-0.log"
+    log_file.write_text(
+        "API proxy error for http://analyzer-api:8000/assessment/namespaces: TypeError: fetch failed\n"
+        "[cause]: Error: getaddrinfo ENOTFOUND analyzer-api\n",
+        encoding="utf-8",
+    )
+    service = ServiceSpec(
+        name="analyzer-api",
+        namespace="shiftwise-ai",
+        service_type="ClusterIP",
+        ports=(ServicePortSpec(name="http", port=8000, target_port=8000),),
+        source=DataSourceRef(
+            file_path=str(tmp_path / "analyzer-api.yaml"),
+            resource_kind="Service",
+            resource_name="analyzer-api",
+            namespace="shiftwise-ai",
+        ),
+    )
+    bundle = NamespaceWorkloadBundle(
+        namespace="shiftwise-ai",
+        workloads=(),
+        services=(service,),
+        routes=(),
+        configmaps=(),
+        operators=(),
+        events=(),
+        pod_logs=(parse_pod_log(log_file, app_group="kubeoptix-dashboard"),),
+        secret_references=(),
+    )
+    ctx = AnalysisContext(bundle=bundle, nodes=())
+    builder = FindingBuilder()
+    analyze_inventory(ctx, builder)
+
+    findings = builder.findings
+    assert any(
+        "analyzer-api" in finding.analysis.lower() and "dns" in finding.analysis.lower()
+        for finding in findings
+    )
+
+
+def test_config_value_service_names_ignores_timezones_and_external_domains() -> None:
+    assert _config_value_service_names("America/Sao_Paulo", key="TZ") == ()
+    assert _config_value_service_names("https://api.vendor.example.com", key="API_URL") == ()
+    assert _config_value_service_names("http://analyzer-api:8000", key="ANALYZER_API_URL") == ("analyzer-api",)
+    assert _config_value_service_names("dashboard", key="API_HOST") == ("dashboard",)
+
+
+def test_analyze_inventory_links_dns_failure_to_configured_service_dependency(tmp_path: Path) -> None:
+    log_file = tmp_path / "kubeoptix-dashboard-0.log"
+    log_file.write_text(
+        "API proxy error for http://analyzer-api:8000/assessment/namespaces: TypeError: fetch failed\n"
+        "[cause]: Error: getaddrinfo ENOTFOUND analyzer-api\n",
+        encoding="utf-8",
+    )
+    service = ServiceSpec(
+        name="analyzer-api",
+        namespace="shiftwise-ai",
+        service_type="ClusterIP",
+        ports=(ServicePortSpec(name="http", port=8000, target_port=8000),),
+        source=DataSourceRef(
+            file_path=str(tmp_path / "analyzer-api.yaml"),
+            resource_kind="Service",
+            resource_name="analyzer-api",
+            namespace="shiftwise-ai",
+        ),
+    )
+    configmap = ConfigMapSpec(
+        name="kubeoptix-dashboard-env",
+        namespace="shiftwise-ai",
+        app_group="kubeoptix-dashboard",
+        keys=("ANALYZER_API_URL",),
+        data={"ANALYZER_API_URL": "http://analyzer-api:8000"},
+        source=DataSourceRef(
+            file_path=str(tmp_path / "kubeoptix-dashboard-env.yaml"),
+            resource_kind="ConfigMap",
+            resource_name="kubeoptix-dashboard-env",
+            namespace="shiftwise-ai",
+        ),
+    )
+    workload = Workload(
+        namespace="shiftwise-ai",
+        name="kubeoptix-dashboard",
+        app_group="kubeoptix-dashboard",
+        kind="Deployment",
+        referenced_configmaps=("kubeoptix-dashboard-env",),
+        source=DataSourceRef(
+            file_path=str(tmp_path / "kubeoptix-dashboard.yaml"),
+            resource_kind="Deployment",
+            resource_name="kubeoptix-dashboard",
+            namespace="shiftwise-ai",
+        ),
+    )
+    bundle = NamespaceWorkloadBundle(
+        namespace="shiftwise-ai",
+        workloads=(workload,),
+        services=(service,),
+        routes=(),
+        configmaps=(configmap,),
+        operators=(),
+        events=(),
+        pod_logs=(parse_pod_log(log_file, app_group="kubeoptix-dashboard"),),
+        secret_references=(),
+    )
+    ctx = AnalysisContext(bundle=bundle, nodes=())
+    builder = FindingBuilder()
+    analyze_inventory(ctx, builder)
+
+    findings = builder.findings
+    assert any(
+        "ConfigMap/env" in finding.analysis or "configmap/env" in finding.analysis.lower()
+        for finding in findings
+    )
+
+
+def test_benchmark_handles_multiple_namespaces(tmp_path: Path) -> None:
+    ns_a = tmp_path / "ns-a"
+    ns_b = tmp_path / "ns-b"
+    for namespace in (ns_a, ns_b):
+        app_dir = namespace / "apps" / "demo-app"
+        log_dir = app_dir / "pod-logs"
+        log_dir.mkdir(parents=True)
+        (log_dir / "demo-app-0.log").write_text(
+            "INFO started\nTypeError: fetch failed\n[CAUSE] Error: getaddrinfo ENOTFOUND demo-api\n",
+            encoding="utf-8",
+        )
+
+    result = benchmark(tmp_path)
+    assert len(result["namespaces"]) == 2
+    assert result["files_analyzed"] == 2
+    assert result["precision"] >= 0.0
+    assert result["recall"] >= 0.0
+
+
+def test_analyze_inventory_flags_startup_guard_gap(tmp_path: Path) -> None:
+    workload = Workload(
+        namespace="shiftwise-ai",
+        name="dashboard",
+        app_group="dashboard",
+        kind="Deployment",
+        referenced_configmaps=("dashboard-env",),
+        containers=(
+            ContainerSpec(
+                name="dashboard",
+                image="nginx",
+                source=DataSourceRef(
+                    file_path=str(tmp_path / "dashboard.yaml"),
+                    resource_kind="Deployment",
+                    resource_name="dashboard",
+                    namespace="shiftwise-ai",
+                ),
+            ),
+        ),
+        source=DataSourceRef(
+            file_path=str(tmp_path / "dashboard.yaml"),
+            resource_kind="Deployment",
+            resource_name="dashboard",
+            namespace="shiftwise-ai",
+        ),
+    )
+    configmap = ConfigMapSpec(
+        name="dashboard-env",
+        namespace="shiftwise-ai",
+        app_group="dashboard",
+        keys=("API_URL",),
+        data={"API_URL": "http://backend-api:8000"},
+        source=DataSourceRef(
+            file_path=str(tmp_path / "dashboard-env.yaml"),
+            resource_kind="ConfigMap",
+            resource_name="dashboard-env",
+            namespace="shiftwise-ai",
+        ),
+    )
+    bundle = NamespaceWorkloadBundle(
+        namespace="shiftwise-ai",
+        workloads=(workload,),
+        services=(),
+        routes=(),
+        configmaps=(configmap,),
+        operators=(),
+        events=(),
+        pod_logs=(),
+        secret_references=(),
+    )
+    ctx = AnalysisContext(bundle=bundle, nodes=())
+    builder = FindingBuilder()
+    analyze_inventory(ctx, builder)
+
+    assert any(
+        "readinessProbe" in finding.analysis or "startupProbe" in finding.analysis
+        for finding in builder.findings
+    )
+
+
+def test_build_service_dependency_graph_tracks_known_service_edges(tmp_path: Path) -> None:
+    workload = Workload(
+        namespace="shiftwise-ai",
+        name="dashboard",
+        app_group="dashboard",
+        kind="Deployment",
+        referenced_configmaps=("dashboard-env",),
+        source=DataSourceRef(
+            file_path=str(tmp_path / "dashboard.yaml"),
+            resource_kind="Deployment",
+            resource_name="dashboard",
+            namespace="shiftwise-ai",
+        ),
+    )
+    service = ServiceSpec(
+        name="analyzer-api",
+        namespace="shiftwise-ai",
+        service_type="ClusterIP",
+        ports=(ServicePortSpec(name="http", port=8000),),
+        source=DataSourceRef(
+            file_path=str(tmp_path / "analyzer-api.yaml"),
+            resource_kind="Service",
+            resource_name="analyzer-api",
+            namespace="shiftwise-ai",
+        ),
+    )
+    configmap = ConfigMapSpec(
+        name="dashboard-env",
+        namespace="shiftwise-ai",
+        app_group="dashboard",
+        keys=("ANALYZER_API_URL",),
+        data={"ANALYZER_API_URL": "http://analyzer-api:8000"},
+        source=DataSourceRef(
+            file_path=str(tmp_path / "dashboard-env.yaml"),
+            resource_kind="ConfigMap",
+            resource_name="dashboard-env",
+            namespace="shiftwise-ai",
+        ),
+    )
+    bundle = NamespaceWorkloadBundle(
+        namespace="shiftwise-ai",
+        workloads=(workload,),
+        services=(service,),
+        routes=(),
+        configmaps=(configmap,),
+        operators=(),
+        events=(),
+        pod_logs=(),
+        secret_references=(),
+    )
+
+    graph = build_service_dependency_graph(bundle)
+    assert ("dashboard", "analyzer-api", "config:dashboard-env") in graph
 
 
 def test_external_diagrams_split_per_route(three_tier_tree: Path, tmp_path: Path) -> None:

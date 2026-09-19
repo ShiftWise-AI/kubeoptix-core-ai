@@ -1,36 +1,32 @@
-# Helm Chart — kubeoptix-core-ai
+# Helm chart — kubeoptix-core-ai
 
-Chart Helm para instalar o KubeOptix Core AI em OpenShift como **StatefulSet single-instance** (`scalePolicy.maxReplicas: 1`).
+This Helm chart installs KubeOptix Core AI on OpenShift as a **single-instance StatefulSet** (`scalePolicy.maxReplicas: 1`).
 
-## Arquitetura
+## Architecture
 
-| Recurso | Configuração |
-|---------|--------------|
-| Workload | `StatefulSet`, réplicas via `scalePolicy.maxReplicas` |
-| Service API | `ClusterIP` (`service.api`) |
-| Exposição externa | Nenhuma (sem Route/Ingress) |
-| Persistência | PVC existente `harvester-app-data` em `/app/data` |
-| Build | `BuildConfig` + `ImageStream` quando `build.enabled=true` |
+| Resource | Configuration |
+|----------|---------------|
+| Workload | `StatefulSet`; replicas controlled by `scalePolicy.maxReplicas` |
+| API service | `ClusterIP` (`service.api`) |
+| External exposure | None (no Route/Ingress) |
+| Persistence | Existing PVC `harvester-app-data` mounted at `/app/data` |
+| Build | `BuildConfig` + `ImageStream` when `build.enabled=true` |
 
-## Pré-requisitos
+## Prerequisites
 
-1. OpenShift 4.x com SCC padrão (restricted).
-2. PVC `harvester-app-data` já criado no namespace de destino.
-3. Secret Git para o BuildConfig (nunca em `values.example.yaml`):
+1. OpenShift 4.x with the default `restricted` SCC.
+2. PVC `harvester-app-data` already exists in the target namespace.
+3. Git secret for the BuildConfig (never keep this in `values.example.yaml`):
 
 ```bash
-oc create secret generic github-auth \
-  --from-literal=username=<user> \
-  --from-literal=password=<TOKEN_GIT> \
-  --type=kubernetes.io/basic-auth \
-  -n shiftwise-ai
+oc create secret generic github-auth   --from-literal=username=<user>   --from-literal=password=<token>   --type=kubernetes.io/basic-auth   -n shiftwise-ai
 ```
 
-## Instalação
+## Installation
 
 ```bash
 cp ./helm/kubeoptix-core-ai/values.example.yaml ./my-values.yaml
-# ajuste build.git.uri, build.git.ref, image.repository e namespace.name
+# adjust build.git.uri, build.git.ref, image.repository, and namespace.name
 
 helm lint ./helm/kubeoptix-core-ai -f ./my-values.yaml
 helm template kubeoptix-core-ai ./helm/kubeoptix-core-ai -f ./my-values.yaml
@@ -38,37 +34,35 @@ helm template kubeoptix-core-ai ./helm/kubeoptix-core-ai -f ./my-values.yaml
 ./install.sh -f ./my-values.yaml
 ```
 
-O `install.sh` instala sempre no namespace `shiftwise-ai` e dispara `oc start-build` quando o chart cria um BuildConfig.
-Após a instalação, o script também executa cleanup de recursos órfãos do mesmo release (ex.: ConfigMaps, Secrets, certificados e rotas que ficaram fora do manifest atual).
-Após uma instalação bem-sucedida, o script remove automaticamente builds concluídos (`status=Complete`) do BuildConfig do release.
-Após o término, o script também remove os secrets de histórico Helm (`sh.helm.release.v1.<release>.*`) do namespace.
-Para desabilitar apenas o cleanup de recursos órfãos em uma execução específica, use `-x`:
+`install.sh` always installs into the `shiftwise-ai` namespace and triggers `oc start-build` when the chart creates a BuildConfig. After installation, the script also performs cleanup of orphaned resources from the same release (for example, ConfigMaps, Secrets, certificates, and routes that are no longer part of the current manifest). A successful installation also removes completed builds (`status=Complete`) from the BuildConfig of the release.
+
+To disable orphan cleanup for a specific run, use `-x`:
 
 ```bash
 ./install.sh -f ./my-values.yaml -x
 ```
 
-## Build da imagem (OpenShift)
+## Image build (OpenShift)
 
-O projeto usa **Containerfile** (UBI 10). Com `build.enabled=true`, o chart cria `BuildConfig` + `ImageStream` e o `install.sh` executa o build automaticamente:
+The project uses a **Containerfile** (UBI 10). With `build.enabled=true`, the chart creates `BuildConfig` + `ImageStream`, and `install.sh` runs the build automatically:
 
 ```bash
 ./install.sh -f ./my-values.yaml
 ```
 
-Após o `oc start-build --wait`, o script aguarda a publicação da `ImageStreamTag` de saída do BuildConfig antes de reiniciar o StatefulSet, reduzindo falhas de pull com `manifest unknown`.
+After `oc start-build --wait`, the script waits for the `ImageStreamTag` from the BuildConfig before restarting the StatefulSet, which reduces pull failures such as `manifest unknown`. When `image.useBuildOutput=true`, the pod template also watches that `ImageStreamTag`, so later successful builds trigger a rollout automatically.
 
-Para rebuild manual:
+Manual rebuild:
 
 ```bash
 oc start-build kubeoptix-core-ai --wait -n shiftwise-ai
 oc rollout restart statefulset/kubeoptix-core-ai -n shiftwise-ai
 ```
 
-## Variáveis de ambiente (`podEnv`)
+## Environment variables (`podEnv`)
 
-| Variável | Valor padrão |
-|----------|--------------|
+| Variable | Default value |
+|----------|---------------|
 | `TZ` | `America/Sao_Paulo` |
 | `LOG_LEVEL` | `INFO` |
 | `PORT` | `8000` |
@@ -77,24 +71,21 @@ oc rollout restart statefulset/kubeoptix-core-ai -n shiftwise-ai
 | `KUBEOPTIX_METADATA_DIR` | `/app/data/assessment` |
 | `KUBEOPTIX_OUTPUT_DIR` | `/app/data/reports` |
 
-O container usa o `CMD` da imagem (`python api.py`).
+The container uses the image `CMD` (`python api.py`).
 
-## API de análise
+## Analysis API
 
-| Método | Caminho | Descrição |
-|--------|---------|-----------|
-| `POST` | `/analysis` | Analisa um ou mais namespaces e grava relatórios em `KUBEOPTIX_OUTPUT_DIR` |
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/analysis` | Analyzes one or more namespaces and writes reports to `KUBEOPTIX_OUTPUT_DIR` |
 
-Exemplo:
+Example:
 
 ```bash
-oc exec -n shiftwise-ai statefulset/kubeoptix-core-ai -- \
-  curl -sS -X POST "http://127.0.0.1:8000/analysis" \
-  -H "Content-Type: application/json" \
-  -d '{"namespaces": ["meu-namespace-prd"]}'
+oc exec -n shiftwise-ai statefulset/kubeoptix-core-ai --   curl -sS -X POST "http://127.0.0.1:8000/analysis"   -H "Content-Type: application/json"   -d '{"namespaces": ["example-ns-prd"]}'
 ```
 
-Documentação completa: [`docs/api.md`](../../docs/api.md).
+Full API documentation: [`docs/api.md`](../../docs/api.md).
 
 ## Health checks
 
@@ -104,12 +95,12 @@ Documentação completa: [`docs/api.md`](../../docs/api.md).
 | `livenessProbe` | `GET /health/live` |
 | `readinessProbe` | `GET /health/ready` |
 
-## Single-instance
+## Single-instance deployment
 
-Esta aplicação **não suporta múltiplas réplicas**. Mantenha `scalePolicy.maxReplicas: 1` e não crie HPA, KEDA ou qualquer autoscaling.
+This application **does not support multiple replicas**. Keep `scalePolicy.maxReplicas: 1` and do not create HPA, KEDA, or any autoscaling configuration.
 
-## Segurança
+## Security
 
-- Compatível com SCC `restricted` do OpenShift (não fixar `runAsUser`/`fsGroup` no values).
-- `readOnlyRootFilesystem` não é forçado no chart (PVC e `/tmp` precisam de escrita).
-- `automountServiceAccountToken: false` (sem acesso à API do cluster).
+- Compatible with OpenShift `restricted` SCC (do not force `runAsUser` or `fsGroup` in the chart values).
+- `readOnlyRootFilesystem` is not enforced in the chart (PVC and `/tmp` require write access).
+- `automountServiceAccountToken: false` (no cluster API access).

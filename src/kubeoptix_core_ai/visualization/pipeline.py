@@ -15,7 +15,8 @@ from kubeoptix_core_ai.visualization.png import PngRenderer
 
 def report_assets_prefix(namespace: str) -> str:
     """Prefixo relativo da pasta de imagens no Markdown do relatório."""
-    return f"{namespace}_assets"
+    clean_namespace = namespace.removeprefix("ml-")
+    return f"ml-{clean_namespace}_assets"
 
 
 @dataclass(frozen=True)

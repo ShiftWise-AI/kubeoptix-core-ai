@@ -797,18 +797,64 @@ def _proposed_namespaces_section(
     return "\n".join(lines)
 
 
+def _render_architecture_text_fallback(bundle: AssessmentBundle) -> str:
+    """Fallback textual para arquitetura reversa quando KubeDiagrams não está disponível."""
+    svc_by_name = {svc.name: svc for svc in bundle.context.services}
+    workloads = sorted(bundle.context.workloads, key=lambda wl: wl.name)
+    workload_by_service: dict[str, list[str]] = {}
+    for workload in workloads:
+        labels = workload.pod_template_labels or workload.match_labels
+        for service in bundle.context.services:
+            selector = service.selector
+            if not selector:
+                continue
+            if all(labels.get(key) == value for key, value in selector.items()):
+                workload_by_service.setdefault(service.name, []).append(workload.name)
+
+    route_lines: list[str] = []
+    if bundle.context.routes:
+        for route in sorted(bundle.context.routes, key=lambda r: r.name):
+            target = route.target_service or "service-indefinido"
+            route_lines.append(f"[Cliente externo] --> Route/{route.name} ({route.host or 'host-indefinido'})")
+            route_lines.append(f"    |")
+            route_lines.append(f"    v")
+            route_lines.append(f"Service/{target}")
+            if target in workload_by_service:
+                for workload_name in workload_by_service[target]:
+                    route_lines.append(f"          --> Workload/{workload_name}")
+    if not route_lines:
+        route_lines.append("[Cliente externo] --> [Namespace]")
+        for service in sorted(svc_by_name):
+            target_names = workload_by_service.get(service, [])
+            route_lines.append(f"    |")
+            route_lines.append(f"    v")
+            route_lines.append(f"Service/{service}")
+            for workload_name in target_names:
+                route_lines.append(f"          --> Workload/{workload_name}")
+
+    lines = [
+        "```text",
+        "Fluxo de entrada, Service e dependências internas",
+        "",
+        *route_lines,
+        "```",
+    ]
+    return "\n".join(lines)
+
+
 def _namespace_architecture_section(
     bundle: AssessmentBundle,
     diagram_renderer: DiagramRenderer | None,
 ) -> str:
-    """Diagrama de arquitetura do namespace (somente KubeDiagrams)."""
+    """Diagrama de arquitetura do namespace (KubeDiagrams quando disponível; fallback textual local)."""
     diagram = build_namespace_architecture_diagram(bundle)
     manifests = manifests_for_namespace_architecture(bundle)
 
     if not manifests and diagram is None:
         return (
             "> Não foram identificadas relações de comunicação suficientes no "
-            "inventário YAML para representar a arquitetura deste namespace.\n"
+            "inventário YAML para representar a arquitetura deste namespace.\n\n"
+            f"{_render_architecture_text_fallback(bundle)}\n"
         )
 
     image_path, yaml_sources = _render_architecture_image(
@@ -819,6 +865,13 @@ def _namespace_architecture_section(
     )
 
     lines = [_architecture_legend(), ""]
+    if image_path is None:
+        lines.append("### Arquitetura reversa (fallback textual)")
+        lines.append("")
+        lines.append(_render_architecture_text_fallback(bundle))
+        lines.append("")
+        return "\n".join(lines)
+
     _append_architecture_image_block(
         lines,
         title="Arquitetura do namespace",
@@ -1763,19 +1816,16 @@ class MarkdownReportGenerator:
             "",
             "---",
             "",
-            "## 1. Legenda de siglas",
+            "## 1. Sumário executivo",
             "",
         ]
-        sections.append(_acronyms_legend())
-
-        sections.extend(["", "---", "", "## 2. Sumário executivo", ""])
 
         for line in _executive_narrative(report, bundle):
             sections.append(line)
         sections.append("")
         sections.append(_workloads_summary_table(ctx.workloads))
 
-        sections.extend(["", "---", "", "## 3. Escopo da análise", ""])
+        sections.extend(["", "---", "", "## 2. Inventário do namespace / aplicações", ""])
         sections.append(
             f"- **Workloads analisados:** {report.workloads_analyzed}\n"
             f"- **Worknodes considerados:** {report.worknodes_considered}\n"
@@ -1785,7 +1835,7 @@ class MarkdownReportGenerator:
             f"- **Erros de parsing:** {len(diag.parse_errors)}\n"
             f"- **Camada ML local:** {'ativada' if report.ml_enabled else 'desativada'}"
         )
-        sections.extend(["", "---", "", "## 4. Fontes de dados", ""])
+        sections.extend(["", "---", "", "### Fontes de dados", ""])
         sections.append(
             "Tipos de artefato considerados nesta execução:\n\n"
             "- Workloads: Deployment, StatefulSet, DaemonSet, DeploymentConfig, "
@@ -1819,11 +1869,39 @@ class MarkdownReportGenerator:
             if len(diag.processed_files) > 20:
                 sections.append(f"- _… e mais {len(diag.processed_files) - 20} arquivo(s)_")
 
-        sections.extend(["", "---", "", "## 5. Visão geral do namespace", ""])
-        sections.append(_namespace_totals_table(bundle))
-        sections.append("\n### Comparativo request / limit / uso (snapshot)\n")
-        sections.append(_resource_balance_table(bundle))
-        sections.append("\n### Arquitetura\n")
+        if ctx.services:
+            sections.append("\n### Services\n")
+            sections.append(_services_table(ctx.services))
+        if ctx.routes:
+            sections.append("\n### Routes (exposição externa)\n")
+            sections.append(_routes_table(ctx.routes))
+        if ctx.configmaps:
+            sections.append("\n### ConfigMaps\n")
+            sections.append(
+                _configmaps_table(ctx.configmaps, _referenced_configmap_names(ctx.workloads))
+            )
+        sections.append("\n### Secrets referenciados\n")
+        sections.append(_secrets_table(ctx.secret_references))
+        if ctx.pod_logs:
+            sections.append("\n### Logs de pods (amostra)\n")
+            sections.append(_pod_logs_table(ctx.pod_logs))
+
+        inventory_findings = _findings_by_categories(
+            report.findings, _SECTION_CATEGORIES["inventory"]
+        )
+        if inventory_findings:
+            sections.append(
+                _section_findings(inventory_findings, "Findings de inventário / observabilidade:")
+            )
+
+        sections.append("\n### Workloads consolidados\n")
+        sections.append(_workload_kinds_summary(ctx.workloads))
+        sections.append("\n### Detalhamento por workload\n")
+        sections.append(_workloads_table(ctx.workloads))
+        sections.append("\n### Placement observado\n")
+        sections.append(_placement_table(ctx.workloads, ctx.nodes))
+
+        sections.extend(["", "---", "", "## 3. Arquitetura reversa", ""])
         sections.append(
             _namespace_architecture_section(
                 bundle,
@@ -1847,144 +1925,15 @@ class MarkdownReportGenerator:
                     "Finding de arquitetura / redistribuição de namespace:",
                 )
             )
+
+        sections.extend(["", "---", "", "## 4. Recursos de CPU e memória", ""])
+        sections.append(_namespace_totals_table(bundle))
+        sections.append("\n### Comparativo request / limit / uso (snapshot)\n")
+        sections.append(_resource_balance_table(bundle))
         sections.append("\n### Visualizações\n")
         sections.append(render_section_visualizations(visualizations.by_section("namespace_overview")))
 
-        sections.extend(["", "---", "", "## 6. Workloads identificados", ""])
-
-        if ctx.services:
-            sections.append("### Inventário — Services\n")
-            sections.append(_services_table(ctx.services))
-        if ctx.routes:
-            sections.append("\n### Inventário — Routes (exposição externa)\n")
-            sections.append(_routes_table(ctx.routes))
-        if ctx.configmaps:
-            sections.append("\n### Inventário — ConfigMaps\n")
-            sections.append(
-                _configmaps_table(ctx.configmaps, _referenced_configmap_names(ctx.workloads))
-            )
-        sections.append("\n### Inventário — Secrets referenciados\n")
-        sections.append(_secrets_table(ctx.secret_references))
-        if ctx.pod_logs:
-            sections.append("\n### Inventário — Logs de pods (amostra)\n")
-            sections.append(_pod_logs_table(ctx.pod_logs))
-
-        inventory_findings = _findings_by_categories(
-            report.findings, _SECTION_CATEGORIES["inventory"]
-        )
-        if inventory_findings:
-            sections.append(
-                _section_findings(inventory_findings, "Findings de inventário / observabilidade:")
-            )
-
-        sections.append("\n### Workloads consolidados (todos os controllers)\n")
-        sections.append(_workload_kinds_summary(ctx.workloads))
-        sections.append("\n### Detalhamento por workload\n")
-        sections.append(_workloads_table(ctx.workloads))
-        sections.append("\n### Placement observado\n")
-        sections.append(_placement_table(ctx.workloads, ctx.nodes))
-
-        sections.append("\n### Comunicação\n")
-        sections.append("#### 1. Externa → OpenShift\n")
-        sections.append(
-            render_section_visualizations(visualizations.by_section("communication_external"))
-        )
-        sections.append("#### 2. Comunicação interna\n")
-        sections.append(
-            render_section_visualizations(visualizations.by_section("communication_internal"))
-        )
-        sections.append("#### 3. Dependências externas\n")
-        sections.append(
-            render_section_visualizations(
-                visualizations.by_section("communication_dependencies")
-            )
-        )
-
-        sections.append("\n### Visualizações\n")
-        sections.append(render_section_visualizations(visualizations.by_section("workloads")))
-
-        sections.extend(["", "---", "", "## 7. Análise de CPU", ""])
-        sections.append("### Configuração (request/limit)\n")
-        sections.append(
-            "Valores de **request** e **limit** abaixo são configurados nos "
-            "controllers de workload — não representam uso real.\n"
-        )
-        cpu_rows: list[tuple[str, ...]] = []
-        for wl in ctx.workloads:
-            cpu_rows.append(
-                (
-                    f"`{wl.name}`",
-                    _container_cpu_request_m(wl),
-                    _container_cpu_limit_m(wl),
-                    str(wl.replicas_desired or "—"),
-                )
-            )
-        sections.append(
-            _md_table(
-                ("Workload", "CPU request/pod", "CPU limit/pod", "Réplicas"),
-                cpu_rows,
-            )
-        )
-        sections.append("\n### Uso real (PodMetrics)\n")
-        sections.append(_runtime_metrics_table(ctx.workloads))
-        sections.append("\n### Visualizações\n")
-        sections.append(render_section_visualizations(visualizations.by_section("cpu")))
-        sections.append(
-            _section_findings(
-                _findings_by_categories(report.findings, _SECTION_CATEGORIES["cpu"]),
-                "Findings de CPU e recursos relacionados:",
-            )
-        )
-
-        sections.extend(["", "---", "", "## 8. Análise de memória", ""])
-        mem_rows: list[tuple[str, ...]] = []
-        for wl in ctx.workloads:
-            mem_rows.append(
-                (
-                    f"`{wl.name}`",
-                    _container_mem_request(wl),
-                    _container_mem_limit(wl),
-                    str(wl.replicas_desired or "—"),
-                )
-            )
-        sections.append(
-            _md_table(
-                ("Workload", "Mem request/pod", "Mem limit/pod", "Réplicas"),
-                mem_rows,
-            )
-        )
-        sections.append("\n### Visualizações\n")
-        sections.append(render_section_visualizations(visualizations.by_section("memory")))
-        sections.append(
-            _section_findings(
-                _findings_by_categories(report.findings, _SECTION_CATEGORIES["memory"]),
-                "Findings de memória:",
-            )
-        )
-
-        for title, key in (
-            ("## 9. Análise de QoS", "qos"),
-            ("## 10. Análise de réplicas", "replicas"),
-            ("## 11. Análise de probes", "probes"),
-            ("## 12. Análise de scheduling", "scheduling"),
-            ("## 13. Análise de storage", "storage"),
-        ):
-            sections.extend(["", "---", "", title, ""])
-            if key == "qos":
-                sections.append("\n### Visualizações\n")
-                sections.append(render_section_visualizations(visualizations.by_section("qos")))
-            sections.append(
-                _section_findings(
-                    _findings_by_categories(report.findings, _SECTION_CATEGORIES[key]),
-                    f"Findings da categoria {key}:",
-                )
-            )
-
-        sections.extend(["", "---", "", "## 14. Events", ""])
-        sections.append(
-            "Events Warning agregados por `reason` e objeto envolvido. "
-            "Events Normal (Scheduled, Pulled, Started) não geram finding.\n"
-        )
+        sections.extend(["", "---", "", "## 5. Observabilidade (métricas, logs, monitoramento)", ""])
         sections.append(_events_summary_table(ctx.events))
         sections.append(
             _section_findings(
@@ -1992,103 +1941,25 @@ class MarkdownReportGenerator:
                 "Findings de Events:",
             )
         )
-
-        sections.extend(
-            ["", "---", "", "## 15. Atualização de Operators (OLM)", ""]
-        )
-        sections.append(
-            "CSVs instalados comparados ao `currentCSV` do canal padrão do "
-            "PackageManifest. Catálogo completo do marketplace **não** é listado.\n"
-        )
-        sections.append(_operators_table(ctx.operators))
         sections.append(
             _section_findings(
-                _findings_by_categories(
-                    report.findings, _SECTION_CATEGORIES["operators"]
-                ),
-                "Findings de Operators:",
+                _findings_by_categories(report.findings, _SECTION_CATEGORIES["inventory"]),
+                "Findings de observabilidade e logs:",
             )
         )
 
-        sections.extend(["", "---", "", "## 16. Correlação workload × worknode", ""])
-        sections.append("### Inventário de worknodes\n")
-        sections.append(_worknodes_inventory_table(ctx.nodes))
-        sections.append("\n### Nós por datacenter e papel\n")
-        sections.append(_worknodes_role_summary(ctx.nodes))
-        sections.append("\n### Placement por datacenter\n")
-        sections.append(_dc_placement_table(ctx.workloads, ctx.nodes))
-        sections.append("\n### Placement observado (pod × nó)\n")
-        sections.append(_placement_table(ctx.workloads, ctx.nodes))
-        sections.append("\n### Visualizações\n")
-        sections.append(render_section_visualizations(visualizations.by_section("workload_node")))
-        sections.append(
-            _section_findings(
-                _findings_by_categories(
-                    report.findings, _SECTION_CATEGORIES["workload_node"]
-                ),
-                "Findings de correlação workload × worknode:",
-            )
-        )
+        sections.extend(["", "---", "", "## 6. ConfigMaps e dados sensíveis (secrets, chaves, certificados)", ""])
+        if ctx.configmaps:
+            sections.append(_configmaps_table(ctx.configmaps, _referenced_configmap_names(ctx.workloads)))
+        sections.append(_secrets_table(ctx.secret_references))
 
-        sections.extend(["", "---", "", "## 17. Anomalias identificadas", ""])
-        if report.ml_enabled:
-            sections.append(
-                "Sinais da camada estatística/ML local. Inclui comparação com "
-                "percentis da frota (demais namespaces do dump) quando a "
-                "amostra é suficiente. Outlier estatístico **não implica** "
-                "defeito operacional.\n"
-            )
-            sections.append(
-                _section_findings(
-                    _findings_by_categories(
-                        report.findings, _SECTION_CATEGORIES["anomalies"]
-                    ),
-                    "Findings estatísticos / ML:",
-                )
-            )
-        else:
-            sections.append("_Camada ML local desativada nesta execução._\n")
-
-        sections.extend(["", "---", "", "## 18. Findings", ""])
-        grouped_count = len(group_identical_res_findings(report.findings))
-        sections.append(
-            f"Total: **{report.finding_count}** findings "
-            f"({grouped_count} entradas após agrupar RES-* e ML-* equivalentes). "
-            "Detalhes completos nas seções analíticas (7–17); "
-            "índice resumido abaixo.\n"
-        )
-        sections.append(_findings_index_table(report.findings, section_ids))
-        sections.append("\n### Visualizações\n")
-        sections.append(render_section_visualizations(visualizations.by_section("findings")))
-
-        sections.extend(["", "---", "", "## 19. Oportunidades de otimização", ""])
-        sections.append(_opportunities_list(report.findings, section_ids))
-
-        sections.extend(["", "---", "", "## 20. Riscos", ""])
-        sections.append(_risks_list(report.findings, section_ids))
-
-        sections.extend(["", "---", "", "## 21. Recomendações", ""])
+        sections.extend(["", "---", "", "## 7. Plano de ação", ""])
         sections.append("### Plano de ação\n")
         sections.append(_action_plan_table(report.findings, section_ids))
         sections.append("\n### Lista consolidada\n")
         sections.append(_recommendations_list(report.findings, section_ids))
 
-        sections.extend(["", "---", "", "## 22. Conclusão", ""])
-        sections.append(_conclusion_text(report, bundle))
-
-        sections.extend(["", "---", "", "## 23. Limitações da análise", ""])
-        if report.limitations:
-            for lim in report.limitations:
-                sections.append(f"- {lim}")
-        else:
-            sections.append("- Nenhuma limitação adicional registrada.")
-        sections.append(
-            "\n- Este relatório **não** inclui conteúdo de Secrets, "
-            "throttling de CPU ou séries temporais — salvo quando "
-            "explicitamente presentes nos artefatos ingeridos."
-        )
-
-        sections.extend(["", "---", "", "## 24. Referências", ""])
+        sections.extend(["", "---", "", "## 8. Referências utilizadas", ""])
         sections.append(_references_section())
 
         return _prepare_report_content("\n".join(sections) + "\n")
@@ -2100,11 +1971,12 @@ def write_assessment_report(
     *,
     inline_images: bool = True,
 ) -> Path:
-    """Gera `<namespace>.md` e pasta `<namespace>_assets/` no diretório de saída."""
+    """Gera `ml-<namespace>.md` e pasta `ml-<namespace>_assets/` no diretório de saída."""
     output_dir.mkdir(parents=True, exist_ok=True)
+    clean_namespace = bundle.analysis.namespace.removeprefix("ml-")
     assets_prefix = report_assets_prefix(bundle.analysis.namespace)
     assets_dir = output_dir / assets_prefix
-    path = output_dir / f"{bundle.analysis.namespace}.md"
+    path = output_dir / f"ml-{clean_namespace}.md"
     content = MarkdownReportGenerator().generate(bundle, assets_dir=assets_dir)
     if inline_images:
         content = embed_markdown_images(content, markdown_dir=output_dir)

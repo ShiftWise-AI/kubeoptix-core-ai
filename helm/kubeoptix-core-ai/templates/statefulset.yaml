@@ -20,6 +20,11 @@ spec:
     metadata:
       labels:
         {{- include "kubeoptix-core-ai.selectorLabels" . | nindent 8 }}
+      {{- if .Values.image.useBuildOutput }}
+      annotations:
+        image.openshift.io/triggers: >-
+          [{"from":{"kind":"ImageStreamTag","name":"{{ include "kubeoptix-core-ai.imageStreamName" . }}:{{ .Values.image.tag }}","namespace":"{{ include "kubeoptix-core-ai.namespace" . }}"},"fieldPath":"spec.template.spec.containers[?(@.name==\"api\")].image"}]
+      {{- end }}
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: {{ default 30 .Values.terminationGracePeriodSeconds }}

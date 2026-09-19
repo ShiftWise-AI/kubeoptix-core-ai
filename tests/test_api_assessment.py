@@ -51,7 +51,7 @@ def test_dedupe_namespaces_preserves_order() -> None:
 
 
 def test_build_report_filename() -> None:
-    assert build_report_filename("example-ns-prd") == "example-ns-prd.md"
+    assert build_report_filename("example-ns-prd") == "ml-example-ns-prd.md"
 
 
 def test_assessment_service_rejects_missing_namespace(
@@ -102,7 +102,7 @@ def test_assessment_service_run_single_namespace(
     assert report.report_path.is_file()
     assert report.workloads_analyzed >= 1
     assert report.finding_count > 0
-    assert report.report_path.name == f"{EXAMPLE_NAMESPACE}.md"
+    assert report.report_path.name == f"ml-{EXAMPLE_NAMESPACE}.md"
     assert report.report_path.read_text(encoding="utf-8").startswith("---")
 
 
@@ -150,4 +150,4 @@ def test_assessment_service_run_multiple_namespaces(
     assert namespaces == {EXAMPLE_NAMESPACE, OTHER_NAMESPACE}
     for item in result.reports:
         assert item.report_path.is_file()
-        assert item.report_path.name == f"{item.namespace}.md"
+        assert item.report_path.name == f"ml-{item.namespace}.md"

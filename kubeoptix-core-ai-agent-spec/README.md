@@ -1,34 +1,34 @@
-# Especificação do Agente de Análise de Workloads OpenShift
+# OpenShift Workload Analysis Agent Specification
 
-Este diretório contém as regras e a metodologia que devem orientar o desenvolvimento do agente.
+This directory defines the rules and methodology that should guide agent development.
 
-## Estrutura
+## Structure
 
-- `.cursor/rules/workload-agent.mdc` — regras permanentes para o Cursor.
-- `docs/methodology.md` — metodologia de análise.
-- `docs/report-format.md` — padrão do relatório Markdown.
+- `.cursor/rules/workload-agent.mdc` — permanent rules for Cursor.
+- `docs/methodology.md` — analysis methodology.
+- `docs/report-format.md` — Markdown report standard.
 
-## Como utilizar no Cursor
+## How to use it in Cursor
 
-Abra o projeto no Cursor e permita que as regras em `.cursor/rules` sejam carregadas.
+Open the project in Cursor and allow the rules in `.cursor/rules` to load.
 
-Antes de implementar, peça ao Agent para:
+Before implementation, ask the agent to:
 
-1. analisar os arquivos reais de workloads;
-2. analisar os arquivos de worknodes;
-3. analisar o relatório de referência;
-4. identificar os formatos reais;
-5. propor a arquitetura;
-6. somente depois iniciar a implementação.
+1. inspect the real workload files;
+2. inspect the worknode files;
+3. inspect the reference report;
+4. identify the actual formats;
+5. propose the architecture;
+6. only then start the implementation.
 
-Exemplo de primeira solicitação:
+Example first prompt:
 
-> Leia as regras do projeto e analise as fontes de dados configuradas. Não implemente ainda. Inspecione os arquivos reais, identifique seus formatos e campos disponíveis, analise o relatório de referência e proponha uma arquitetura para o agente. Não faça suposições sobre os dados que não estejam confirmadas nos arquivos.
+> Read the project rules and inspect the configured data sources. Do not implement anything yet. Inspect the real files, identify their formats and fields, analyze the reference report, and propose an architecture for the agent. Do not make assumptions about the data unless they are confirmed by the files.
 
-## Princípio central
+## Core principle
 
-A solução deve priorizar:
+The solution should prioritize:
 
-**Confiabilidade → Rastreabilidade → Precisão → Qualidade → IA**
+**Reliability → Traceability → Accuracy → Quality → AI**
 
-A IA deve complementar a análise, e não substituir evidências.
+AI should complement the analysis, not replace evidence.
