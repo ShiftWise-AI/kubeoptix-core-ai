@@ -73,6 +73,50 @@ def test_markdown_report_structure(analysis_tree: Path, tmp_path: Path) -> None:
     assert "Pool de scheduling relevante" in md
 
 
+@pytest.mark.parametrize(
+    ("locale", "title", "summary", "action_plan"),
+    [
+        ("en-US", "Assessment Report", "Executive summary", "Action plan"),
+        ("es-ES", "Informe de evaluación", "Resumen ejecutivo", "Plan de acción"),
+        ("it-IT", "Rapporto di valutazione", "Riepilogo esecutivo", "Piano d'azione"),
+    ],
+)
+def test_markdown_report_is_fully_localized(
+    analysis_tree: Path,
+    tmp_path: Path,
+    locale: str,
+    title: str,
+    summary: str,
+    action_plan: str,
+) -> None:
+    config = AnalyzerConfig(
+        workloads_base=analysis_tree,
+        worknodes_path=tmp_path / "worknodes",
+    )
+    bundle = AssessmentPipeline(config).run(EXAMPLE_NAMESPACE)
+    md = MarkdownReportGenerator(locale).generate(bundle)
+
+    assert f"lang: {locale}" in md
+    assert f"# {title}" in md
+    assert f"## 1. {summary}" in md
+    assert f"## 7. {action_plan}" in md
+    for portuguese_text in (
+        "Este relatório foi produzido",
+        "foi analisado com",
+        "Tipos de artefato considerados",
+        "Nenhum conteúdo de Secret",
+        "Diagrama gerado a partir",
+        "Uso real é",
+        "**Evidências:**",
+        "**Análise:**",
+        "**Impacto potencial:**",
+        "**Recomendação:**",
+        "| Prioridade | Ação |",
+        "Fontes consultadas para fundamentar",
+    ):
+        assert portuguese_text not in md
+
+
 def test_markdown_distinguishes_usage_from_request(
     analysis_tree: Path, tmp_path: Path
 ) -> None:

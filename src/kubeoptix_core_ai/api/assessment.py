@@ -22,6 +22,7 @@ from kubeoptix_core_ai.report.markdown import (
     REPORT_FILE_ENCODING,
     MarkdownReportGenerator,
 )
+from kubeoptix_core_ai.report.i18n import resolve_system_locale
 from kubeoptix_core_ai.visualization.markdown import embed_markdown_images
 from kubeoptix_core_ai.report.pipeline import AssessmentPipeline
 from kubeoptix_core_ai.visualization.pipeline import report_assets_prefix
@@ -123,6 +124,9 @@ class AssessmentService:
         enable_ml: bool | None = True,
         progress: RunProgress | None = None,
     ) -> AnalysisRunResult:
+        # Resolve the locale before analysis starts so every generated report
+        # uses the same system setting and failures are explicit.
+        locale = resolve_system_locale()
         ordered = dedupe_namespaces(namespaces)
         self.validate_namespaces(ordered)
 
@@ -164,7 +168,9 @@ class AssessmentService:
             assets_dir = self._reports_dir / report_assets_prefix(namespace)
             if progress is not None:
                 progress.markdown_started()
-            content = MarkdownReportGenerator().generate(bundle, assets_dir=assets_dir)
+            content = MarkdownReportGenerator(locale).generate(
+                bundle, assets_dir=assets_dir
+            )
             content = embed_markdown_images(content, markdown_dir=self._reports_dir)
             report_path.write_bytes(content.encode(REPORT_FILE_ENCODING))
             if progress is not None:
