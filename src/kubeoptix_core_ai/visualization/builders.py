@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from kubeoptix_core_ai.report.i18n import translate_report, validate_locale
 from kubeoptix_core_ai.report.pipeline import AssessmentBundle
 from kubeoptix_core_ai.visualization.datasets import communication, composition, numeric, workload
 from kubeoptix_core_ai.visualization.diagram_renderer import DiagramRenderer
@@ -26,6 +27,82 @@ from kubeoptix_core_ai.visualization.models import (
     VisualizationBundle,
 )
 from kubeoptix_core_ai.visualization.png import PngRenderer
+
+
+def _localize_numeric(dataset: ChartDataset, locale: str) -> ChartDataset:
+    return dataset.model_copy(
+        update={
+            "title": translate_report(dataset.title, locale),
+            "question": translate_report(dataset.question, locale),
+            "x_labels": tuple(translate_report(label, locale) for label in dataset.x_labels),
+            "x_axis_label": translate_report(dataset.x_axis_label, locale),
+            "y_axis_label": translate_report(dataset.y_axis_label, locale),
+            "series": tuple(
+                series.model_copy(
+                    update={
+                        "name": translate_report(series.name, locale),
+                        "points": tuple(
+                            point.model_copy(
+                                update={"label": translate_report(point.label, locale)}
+                            )
+                            for point in series.points
+                        ),
+                    }
+                )
+                for series in dataset.series
+            ),
+        }
+    )
+
+
+def _localize_composition(
+    dataset: CompositionDataset, locale: str
+) -> CompositionDataset:
+    return dataset.model_copy(
+        update={
+            "title": translate_report(dataset.title, locale),
+            "question": translate_report(dataset.question, locale),
+            "slices": tuple(
+                slice_.model_copy(
+                    update={"label": translate_report(slice_.label, locale)}
+                )
+                for slice_ in dataset.slices
+            ),
+        }
+    )
+
+
+def _localize_flowchart(dataset: FlowchartDataset, locale: str) -> FlowchartDataset:
+    return dataset.model_copy(
+        update={
+            "title": translate_report(dataset.title, locale),
+            "question": translate_report(dataset.question, locale),
+            "nodes": tuple(
+                node.model_copy(
+                    update={"label": translate_report(node.label, locale)}
+                )
+                for node in dataset.nodes
+            ),
+            "edges": tuple(
+                edge.model_copy(
+                    update={
+                        "label": (
+                            translate_report(edge.label, locale)
+                            if edge.label is not None
+                            else None
+                        )
+                    }
+                )
+                for edge in dataset.edges
+            ),
+            "subgraphs": tuple(
+                subgraph.model_copy(
+                    update={"title": translate_report(subgraph.title, locale)}
+                )
+                for subgraph in dataset.subgraphs
+            ),
+        }
+    )
 
 
 def _collect_provenance_numeric(dataset: ChartDataset) -> tuple[ProvenanceRef, ...]:
@@ -57,7 +134,9 @@ def _spec_from_numeric(
     section: str,
     dataset: ChartDataset,
     renderer: PngRenderer | None,
+    locale: str,
 ) -> VisualizationSpec:
+    dataset = _localize_numeric(dataset, locale)
     image_relpath = renderer.render_numeric(viz_id, dataset) if renderer else None
     provenance = _collect_provenance_numeric(dataset)
     interpretation = interpret_visualization(dataset)
@@ -79,7 +158,9 @@ def _spec_from_composition(
     section: str,
     dataset: CompositionDataset,
     renderer: PngRenderer | None,
+    locale: str,
 ) -> VisualizationSpec:
+    dataset = _localize_composition(dataset, locale)
     image_relpath = renderer.render_composition(viz_id, dataset) if renderer else None
     provenance = _collect_provenance_composition(dataset)
     interpretation = interpret_visualization(dataset)
@@ -102,7 +183,9 @@ def _spec_from_flowchart(
     dataset: FlowchartDataset,
     manifests: tuple[Path, ...],
     diagram_renderer: DiagramRenderer | None,
+    locale: str,
 ) -> VisualizationSpec:
+    dataset = _localize_flowchart(dataset, locale)
     provenance = _collect_provenance_flowchart(dataset)
     interpretation = interpret_visualization(dataset)
 
@@ -168,15 +251,16 @@ def _unavailable(
     reason: str,
     *,
     dataset_kind: str = "numeric",
+    locale: str = "pt-BR",
 ) -> VisualizationSpec:
     return VisualizationSpec(
         id=viz_id,
-        title=title,
-        question=question,
+        title=translate_report(title, locale),
+        question=translate_report(question, locale),
         section=section,
         status=VisualizationStatus.UNAVAILABLE,
-        unavailable_reason=reason,
-        interpretation=f"**Limitação:** {reason}",
+        unavailable_reason=translate_report(reason, locale),
+        interpretation=translate_report(f"**Limitação:** {reason}", locale),
         dataset_kind=dataset_kind,  # type: ignore[arg-type]
     )
 
@@ -185,14 +269,16 @@ def build_all_visualizations(
     bundle: AssessmentBundle,
     renderer: PngRenderer | None = None,
     diagram_renderer: DiagramRenderer | None = None,
+    locale: str = "pt-BR",
 ) -> VisualizationBundle:
+    locale = validate_locale(locale)
     specs: list[VisualizationSpec] = []
     index = manifest_index_for(bundle) if diagram_renderer is not None else None
 
     # §4 — visão geral
     ns_chart = numeric.build_namespace_requests_vs_allocatable(bundle)
     if ns_chart:
-        specs.append(_spec_from_numeric("ns_requests_allocatable", "namespace_overview", ns_chart, renderer))
+        specs.append(_spec_from_numeric("ns_requests_allocatable", "namespace_overview", ns_chart, renderer, locale))
     else:
         specs.append(
             _unavailable(
@@ -201,12 +287,13 @@ def build_all_visualizations(
                 "Os requests agregados cabem no pool de scheduling?",
                 "namespace_overview",
                 "Dados de request do namespace ou capacidade allocatable do pool indisponíveis.",
+                locale=locale,
             )
         )
 
     qos_chart = composition.build_qos_distribution(bundle)
     if qos_chart:
-        specs.append(_spec_from_composition("qos_distribution", "namespace_overview", qos_chart, renderer))
+        specs.append(_spec_from_composition("qos_distribution", "namespace_overview", qos_chart, renderer, locale))
 
     # §5 — workloads
     workload_groups = workload.iter_workload_diagram_groups(bundle)
@@ -222,6 +309,7 @@ def build_all_visualizations(
                     diagram,
                     manifests,
                     diagram_renderer,
+                    locale,
                 )
             )
     else:
@@ -233,6 +321,7 @@ def build_all_visualizations(
                 "workloads",
                 "Nenhum workload disponível para diagrama.",
                 dataset_kind="flowchart",
+                locale=locale,
             )
         )
 
@@ -251,6 +340,7 @@ def build_all_visualizations(
                     diagram,
                     manifests,
                     diagram_renderer,
+                    locale,
                 )
             )
     else:
@@ -262,6 +352,7 @@ def build_all_visualizations(
                 "communication_external",
                 "Nenhuma Route encontrada nos dados coletados.",
                 dataset_kind="flowchart",
+                locale=locale,
             )
         )
 
@@ -280,6 +371,7 @@ def build_all_visualizations(
                     diagram,
                     manifests,
                     diagram_renderer,
+                    locale,
                 )
             )
     else:
@@ -291,6 +383,7 @@ def build_all_visualizations(
                 "communication_internal",
                 "Sem evidência de Service→Workload (selector compatível com labels do pod).",
                 dataset_kind="flowchart",
+                locale=locale,
             )
         )
 
@@ -309,6 +402,7 @@ def build_all_visualizations(
                     diagram,
                     manifests,
                     diagram_renderer,
+                    locale,
                 )
             )
     else:
@@ -320,6 +414,7 @@ def build_all_visualizations(
                 "communication_dependencies",
                 "Sem evidência de registry, Secret ou sinais de runtime em logs.",
                 dataset_kind="flowchart",
+                locale=locale,
             )
         )
 
@@ -331,10 +426,10 @@ def build_all_visualizations(
     ):
         chart = builder(bundle)
         if chart:
-            specs.append(_spec_from_numeric(viz_id, "cpu", chart, renderer))
+            specs.append(_spec_from_numeric(viz_id, "cpu", chart, renderer, locale))
         else:
             specs.append(
-                _unavailable(viz_id, title, question, "cpu", "Valores de CPU não disponíveis nos workloads.")
+                _unavailable(viz_id, title, question, "cpu", "Valores de CPU não disponíveis nos workloads.", locale=locale)
             )
 
     # §7 — memória
@@ -345,15 +440,15 @@ def build_all_visualizations(
     ):
         chart = builder(bundle)
         if chart:
-            specs.append(_spec_from_numeric(viz_id, "memory", chart, renderer))
+            specs.append(_spec_from_numeric(viz_id, "memory", chart, renderer, locale))
         else:
             specs.append(
-                _unavailable(viz_id, title, question, "memory", "Valores de memória não disponíveis nos workloads.")
+                _unavailable(viz_id, title, question, "memory", "Valores de memória não disponíveis nos workloads.", locale=locale)
             )
 
     # §8 — QoS
     if qos_chart:
-        specs.append(_spec_from_composition("qos_distribution_detail", "qos", qos_chart, renderer))
+        specs.append(_spec_from_composition("qos_distribution_detail", "qos", qos_chart, renderer, locale))
     else:
         specs.append(
             _unavailable(
@@ -363,6 +458,7 @@ def build_all_visualizations(
                 "qos",
                 "Classes QoS indisponíveis (Pods ausentes ou sem status.qosClass).",
                 dataset_kind="composition",
+                locale=locale,
             )
         )
 
@@ -379,6 +475,7 @@ def build_all_visualizations(
                 placement,
                 manifests,
                 diagram_renderer,
+                locale,
             )
         )
     else:
@@ -390,19 +487,20 @@ def build_all_visualizations(
                 "workload_node",
                 "Placement indisponível (arquivos de Pod ausentes ou sem spec.nodeName).",
                 dataset_kind="flowchart",
+                locale=locale,
             )
         )
 
     # §15 — findings
     severity = composition.build_severity_distribution(bundle)
     if severity:
-        specs.append(_spec_from_composition("findings_severity", "findings", severity, renderer))
+        specs.append(_spec_from_composition("findings_severity", "findings", severity, renderer, locale))
     category = composition.build_category_distribution(bundle)
     if category:
-        specs.append(_spec_from_composition("findings_category", "findings", category, renderer))
+        specs.append(_spec_from_composition("findings_category", "findings", category, renderer, locale))
 
     app_groups = composition.build_workloads_by_app_group(bundle)
     if app_groups:
-        specs.append(_spec_from_composition("workloads_app_group", "workloads", app_groups, renderer))
+        specs.append(_spec_from_composition("workloads_app_group", "workloads", app_groups, renderer, locale))
 
     return VisualizationBundle(visualizations=tuple(specs))

@@ -1805,6 +1805,7 @@ class MarkdownReportGenerator:
         visualizations = VisualizationPipeline().build(
             bundle,
             renderers=renderers,
+            locale=self._locale,
         )
         ns = report.namespace
         generated = bundle.generated_at.strftime("%d/%m/%Y %H:%M UTC")

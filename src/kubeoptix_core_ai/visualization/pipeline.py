@@ -57,18 +57,21 @@ class VisualizationPipeline:
         assets_dir: Path | None = None,
         assets_prefix: str = "",
         renderers: VisualizationRenderers | None = None,
+        locale: str = "pt-BR",
     ) -> VisualizationBundle:
         if renderers is not None:
             return build_all_visualizations(
                 bundle,
                 renderer=renderers.png,
                 diagram_renderer=renderers.diagram,
+                locale=locale,
             )
         if assets_dir is None:
-            return build_all_visualizations(bundle)
+            return build_all_visualizations(bundle, locale=locale)
         built = create_renderers(bundle, assets_dir, assets_prefix=assets_prefix)
         return build_all_visualizations(
             bundle,
             renderer=built.png,
             diagram_renderer=built.diagram,
+            locale=locale,
         )
