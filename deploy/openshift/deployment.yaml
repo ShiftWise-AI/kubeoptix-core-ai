@@ -46,7 +46,7 @@ spec:
             - name: KUBEOPTIX_OUTPUT_DIR
               value: "/app/data/reports"
             - name: SYSTEM_SETTINGS_URL
-              value: "http://localhost:8000/system-settings"
+              value: "http://configurations-api:8000/system-settings"
           resources:
             requests:
               cpu: 100m
