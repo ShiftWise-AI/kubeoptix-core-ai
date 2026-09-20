@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Mapping
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from kubeoptix_core_ai.errors import ConfigurationError
 
-SYSTEM_SETTINGS_URL = "http://localhost:8000/system-settings"
+SYSTEM_SETTINGS_BASE_URL = "http://localhost:8000"
+SYSTEM_SETTINGS_PATH = "/system-settings"
 SUPPORTED_LOCALES = ("pt-BR", "en-US", "es-ES", "it-IT")
 _BABEL_LANGUAGES = {
     "pt-BR": "brazil",
@@ -222,14 +223,36 @@ def validate_locale(language: object) -> str:
     return language
 
 
+def _system_settings_endpoint(url: str | None = None) -> str:
+    base_url = (
+        url
+        or os.getenv("SYSTEM_SETTINGS_URL", "").strip()
+        or os.getenv("KUBEOPTIX_SYSTEM_SETTINGS_URL", "").strip()
+        or SYSTEM_SETTINGS_BASE_URL
+    ).rstrip("/")
+    if base_url.endswith(SYSTEM_SETTINGS_PATH):
+        return base_url
+    return f"{base_url}{SYSTEM_SETTINGS_PATH}"
+
+
 def resolve_system_locale(*, url: str | None = None, timeout: float = 5.0) -> str:
     """Read and validate the report locale from the system-settings service."""
-    endpoint = url or os.getenv("KUBEOPTIX_SYSTEM_SETTINGS_URL", SYSTEM_SETTINGS_URL)
+    endpoint = _system_settings_endpoint(url)
     request = Request(endpoint, headers={"Accept": "application/json"})
     try:
         with urlopen(request, timeout=timeout) as response:
             payload = json.load(response)
-    except (OSError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+    except HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace").strip()
+        detail = f": {body}" if body else ""
+        raise ConfigurationError(
+            f"Falha ao consultar {endpoint} (HTTP {exc.code}){detail}"
+        ) from exc
+    except URLError as exc:
+        raise ConfigurationError(
+            f"Não foi possível acessar {endpoint}: {exc.reason}"
+        ) from exc
+    except (OSError, TimeoutError, json.JSONDecodeError) as exc:
         raise ConfigurationError(
             f"Não foi possível consultar {endpoint}: {exc}"
         ) from exc

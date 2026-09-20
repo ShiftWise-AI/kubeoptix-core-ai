@@ -45,6 +45,8 @@ spec:
               value: "/app/data/assessment"
             - name: KUBEOPTIX_OUTPUT_DIR
               value: "/app/data/reports"
+            - name: SYSTEM_SETTINGS_URL
+              value: "http://configurations-api:8000"
           resources:
             requests:
               cpu: 100m

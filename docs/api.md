@@ -36,9 +36,11 @@ The server binds to `0.0.0.0:8000` by default. `KUBEOPTIX_API_HOST` and `KUBEOPT
 |----------|---------|-------|
 | `KUBEOPTIX_METADATA_DIR` | `/app/data/assessment` | Namespace and worknode metadata |
 | `KUBEOPTIX_OUTPUT_DIR` | `/app/data/reports` | Destination for generated `.md` reports |
-| `KUBEOPTIX_SYSTEM_SETTINGS_URL` | `http://localhost:8000/system-settings` | Endpoint used to resolve the report locale |
+| `SYSTEM_SETTINGS_URL` | `http://localhost:8000` | Base URL of the service used to resolve the report locale |
 
-Before analysis starts, the service reads `language` from `/system-settings`. Markdown
+Before analysis starts, the service reads `language` from
+`{SYSTEM_SETTINGS_URL}/system-settings`. In OpenShift, configure the internal service
+URL, for example `http://configurations-api:8000`. Markdown
 reports accept only the exact BCP 47 locales `pt-BR`, `en-US`, `es-ES`, and `it-IT`.
 Missing, empty, unsupported, or unavailable settings stop report generation with an
 explicit configuration error; no language fallback is applied.
