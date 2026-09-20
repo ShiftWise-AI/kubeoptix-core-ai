@@ -216,8 +216,10 @@ _TRANSLATIONS: dict[str, dict[str, str]] = {
 def validate_locale(language: object) -> str:
     """Validate an exact, case-sensitive supported BCP 47 locale."""
     if not isinstance(language, str) or language not in SUPPORTED_LOCALES:
+        received = repr(language)
         raise ConfigurationError(
-            "Locale não suportado. Informe exatamente um destes locales: "
+            f"Locale não suportado recebido de /system-settings: {received}. "
+            "Informe exatamente um destes locales: "
             + ", ".join(SUPPORTED_LOCALES)
         )
     return language

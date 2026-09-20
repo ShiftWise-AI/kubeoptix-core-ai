@@ -68,7 +68,7 @@ podEnv:
   MARK_DOWN_FILE: "/app/data/report.md"
   KUBEOPTIX_METADATA_DIR: "/app/data/assessment"
   KUBEOPTIX_OUTPUT_DIR: "/app/data/reports"
-  SYSTEM_SETTINGS_URL: "http://configurations-api:8000"
+  SYSTEM_SETTINGS_URL: "http://localhost:8000/system-settings"
 
 probes:
   enabled: true

@@ -30,7 +30,10 @@ def test_report_catalogs_use_supported_bcp47_locales(
 def test_validate_locale_rejects_missing_empty_and_unsupported_values(
     language: object,
 ) -> None:
-    with pytest.raises(ConfigurationError, match="Locale não suportado"):
+    with pytest.raises(
+        ConfigurationError,
+        match=rf"Locale não suportado recebido de /system-settings: {language!r}",
+    ):
         i18n.validate_locale(language)
 
 
