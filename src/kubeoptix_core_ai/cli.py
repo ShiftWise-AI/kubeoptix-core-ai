@@ -20,6 +20,7 @@ from kubeoptix_core_ai.loaders.workload_loader import WorkloadLoader
 from kubeoptix_core_ai.loaders.worknode_loader import WorknodeLoader
 from kubeoptix_core_ai.logging import setup_logging
 from kubeoptix_core_ai.report.markdown import write_assessment_report
+from kubeoptix_core_ai.report.i18n import resolve_system_locale
 from kubeoptix_core_ai.report.pipeline import AssessmentPipeline
 
 
@@ -106,11 +107,12 @@ def cmd_report(
     enable_ml: bool = True,
     ml_seed: int | None = None,
 ) -> Path:
+    locale = resolve_system_locale()
     ml_config = _ml_config_from_flags(enable_ml=enable_ml, ml_seed=ml_seed)
 
     pipeline = AssessmentPipeline(config, ml_config=ml_config)
     bundle = pipeline.run(namespace, enable_ml=enable_ml)
-    path = write_assessment_report(bundle, output_dir)
+    path = write_assessment_report(bundle, output_dir, locale=locale)
     print(f"Relatório gerado: {path}")
     print(
         f"  Workloads: {bundle.analysis.workloads_analyzed}, "

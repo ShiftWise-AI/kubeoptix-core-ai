@@ -1,4 +1,4 @@
-"""Gerador de relatório de assessment em Markdown (pt-BR).
+"""Gerador de relatório de assessment em Markdown.
 
 Produz documento estruturado a partir exclusivamente dos dados ingeridos e
 dos findings gerados — sem inventar métricas, rotas, logs ou eventos ausentes.
@@ -41,6 +41,12 @@ from kubeoptix_core_ai.report.finding_groups import (
     finding_section_ids,
     format_grouped_finding,
     group_identical_res_findings,
+)
+from kubeoptix_core_ai.report.i18n import (
+    babel_language,
+    resolve_system_locale,
+    translate_report,
+    validate_locale,
 )
 from kubeoptix_core_ai.report.pipeline import AssessmentBundle
 from kubeoptix_core_ai.visualization.datasets.architecture import (
@@ -1754,14 +1760,14 @@ def _references_section() -> str:
     return "\n".join(parts)
 
 
-def _build_report_frontmatter(namespace: str) -> str:
-    """Metadados YAML para conversores (Pandoc, etc.) reconhecerem pt-BR e UTF-8."""
+def _build_report_frontmatter(namespace: str, locale: str) -> str:
+    """Metadados YAML para conversores (Pandoc, etc.) reconhecerem o locale."""
     title = f"Relatório de Assessment — Namespace {namespace}"
     return (
         "---\n"
         f"title: \"{title}\"\n"
-        f"lang: {REPORT_FILE_LANGUAGE}\n"
-        "babel-lang: brazil\n"
+        f"lang: {locale}\n"
+        f"babel-lang: {babel_language(locale)}\n"
         "dir: ltr\n"
         "---\n"
     )
@@ -1774,6 +1780,11 @@ def _prepare_report_content(content: str) -> str:
 
 class MarkdownReportGenerator:
     """Monta relatório Markdown completo a partir de um ``AssessmentBundle``."""
+
+    def __init__(self, locale: str | None = None) -> None:
+        self._locale = validate_locale(
+            locale if locale is not None else resolve_system_locale()
+        )
 
     def generate(
         self,
@@ -1799,7 +1810,7 @@ class MarkdownReportGenerator:
         generated = bundle.generated_at.strftime("%d/%m/%Y %H:%M UTC")
 
         sections: list[str] = [
-            _build_report_frontmatter(ns),
+            _build_report_frontmatter(ns, self._locale),
             f"# Relatório de Assessment — Namespace `{ns}`",
             "",
             f"**Namespace analisado:** `{ns}`",
@@ -1962,7 +1973,9 @@ class MarkdownReportGenerator:
         sections.extend(["", "---", "", "## 8. Referências utilizadas", ""])
         sections.append(_references_section())
 
-        return _prepare_report_content("\n".join(sections) + "\n")
+        return _prepare_report_content(
+            translate_report("\n".join(sections) + "\n", self._locale)
+        )
 
 
 def write_assessment_report(
@@ -1970,6 +1983,7 @@ def write_assessment_report(
     output_dir: Path,
     *,
     inline_images: bool = True,
+    locale: str | None = None,
 ) -> Path:
     """Gera `ml-<namespace>.md` e pasta `ml-<namespace>_assets/` no diretório de saída."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1977,7 +1991,7 @@ def write_assessment_report(
     assets_prefix = report_assets_prefix(bundle.analysis.namespace)
     assets_dir = output_dir / assets_prefix
     path = output_dir / f"ml-{clean_namespace}.md"
-    content = MarkdownReportGenerator().generate(bundle, assets_dir=assets_dir)
+    content = MarkdownReportGenerator(locale).generate(bundle, assets_dir=assets_dir)
     if inline_images:
         content = embed_markdown_images(content, markdown_dir=output_dir)
     path.write_bytes(content.encode(REPORT_FILE_ENCODING))
