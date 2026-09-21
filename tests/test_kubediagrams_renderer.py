@@ -214,7 +214,7 @@ def test_render_manifests_normalizes_namespace_without_clustering_labels(tmp_pat
         "  name: api\n"
         "  labels:\n"
         "    app.kubernetes.io/name: api\n"
-        "    helm.sh/chart: api-0.1.0\n"
+        "    helm.sh/chart: api-1.0.0\n"
         "spec:\n"
         "  replicas: 1\n"
     )
@@ -751,4 +751,3 @@ def test_render_manifests_appends_service_ports_and_patches_routes(tmp_path: Pat
     assert "harvester-api:8000" in merged
     assert "kind: Route" in merged
     assert "kind: Service" in merged
-

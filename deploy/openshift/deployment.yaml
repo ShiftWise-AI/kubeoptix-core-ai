@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: api
-          image: kubeoptix-core-ai-api:latest
+          image: quay.io/parraes/kubeoptix-core-ai:1.0.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

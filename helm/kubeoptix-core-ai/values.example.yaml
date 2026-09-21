@@ -17,15 +17,15 @@ namespace:
 
 image:
   useBuildOutput: true
-  repository: default-route-openshift-image-registry.apps-crc.testing/shiftwise-ai/kubeoptix-core-ai
-  tag: latest
+  repository: quay.io/parraes/kubeoptix-core-ai
+  tag: 1.0.0
   pullPolicy: Always
 
 build:
   enabled: true
   git:
     uri: https://github.com/ShiftWise-AI/kubeoptix-core-ai.git
-    ref: feature/ocp
+    ref: main
     sourceSecret: github-auth
   dockerfilePath: Containerfile
   resources:
