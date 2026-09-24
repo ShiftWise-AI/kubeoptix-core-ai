@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Protocol
 
 from kubeoptix_core_ai.analysis.context import AnalysisContext
@@ -27,6 +28,8 @@ class AnalysisProgress(Protocol):
     def yaml_read_started(self) -> None: ...
 
     def yaml_file_processed(self, processed: int, total: int) -> None: ...
+
+    def yaml_file_started(self, file_path: str) -> None: ...
 
     def yaml_read_finished(self) -> None: ...
 
@@ -82,9 +85,15 @@ class AssessmentPipeline:
             progress.yaml_read_started()
 
         on_file = progress.yaml_file_processed if progress is not None else None
+        on_file_started = (
+            progress.yaml_file_started if progress is not None else None
+        )
         bundle = self._workload_loader.load_namespace(
             namespace,
             on_file_processed=on_file,
+            on_file_started=lambda path: on_file_started(str(path))
+            if on_file_started is not None
+            else None,
         )
         node_bundle = self._worknode_loader.load()
         if progress is not None:

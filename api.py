@@ -157,6 +157,8 @@ class ReportAcceptedResponse(BaseModel):
     execution_id: str
     status: str
     progress: int = Field(ge=0, le=100)
+    current_stage: str = ""
+    current_file: str | None = None
 
 
 class ReportStatusResponse(BaseModel):
@@ -170,6 +172,8 @@ class ReportStatusResponse(BaseModel):
     total: int = Field(ge=0, default=0)
     report: str | None = None
     error: str | None = None
+    current_stage: str = ""
+    current_file: str | None = None
 
 
 class DeleteReportRequest(BaseModel):
@@ -592,6 +596,8 @@ async def start_report(request: AnalysisRequest) -> ReportAcceptedResponse:
         execution_id=snapshot.execution_id,
         status=str(snapshot.status),
         progress=snapshot.progress,
+        current_stage=snapshot.current_stage,
+        current_file=snapshot.current_file,
     )
 
 
@@ -625,6 +631,8 @@ async def report_status(execution_id: str) -> ReportStatusResponse:
         total=snapshot.total,
         report=snapshot.report,
         error=snapshot.error,
+        current_stage=snapshot.current_stage,
+        current_file=snapshot.current_file,
     )
 
 

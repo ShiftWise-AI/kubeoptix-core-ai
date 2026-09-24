@@ -89,9 +89,11 @@ class _TrackingNamespacePaths:
         self,
         paths,
         on_file_processed: Callable[[int, int], None],
+        on_file_started: Callable[[Path], None] | None = None,
     ) -> None:
         self._paths = paths
         self._on_file_processed = on_file_processed
+        self._on_file_started = on_file_started
         self._attempted = 0
         self._total = paths.processable_file_count
 
@@ -103,6 +105,8 @@ class _TrackingNamespacePaths:
 
     def _tracked(self, files):
         for item in files:
+            if self._on_file_started is not None:
+                self._on_file_started(item)
             yield item
             self._attempted += 1
             self._on_file_processed(self._attempted, self._total)
@@ -119,6 +123,7 @@ class WorkloadLoader:
         namespace: str,
         *,
         on_file_processed: Callable[[int, int], None] | None = None,
+        on_file_started: Callable[[Path], None] | None = None,
         include_olm: bool = True,
         include_events: bool = True,
         include_logs: bool = True,
@@ -136,7 +141,11 @@ class WorkloadLoader:
         skipped_files: list[str] = []
         processed_files: list[str] = []
         if on_file_processed is not None:
-            paths = _TrackingNamespacePaths(paths, on_file_processed)
+            paths = _TrackingNamespacePaths(
+                paths,
+                on_file_processed,
+                on_file_started=on_file_started,
+            )
 
         raw_workloads = self._load_workload_controllers(
             paths, parse_errors, processed_files

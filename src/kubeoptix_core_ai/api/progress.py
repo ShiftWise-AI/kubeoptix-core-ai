@@ -7,6 +7,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
+from pathlib import Path
 
 # Marcos locais (0-100) de um namespace, alinhados ao pipeline real.
 PCT_START = 0
@@ -38,6 +39,8 @@ class ExecutionSnapshot:
     report: str | None
     error: str | None
     namespaces: tuple[str, ...]
+    current_stage: str = ""
+    current_file: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -48,6 +51,8 @@ class ExecutionSnapshot:
             "processed": self.processed,
             "total": self.total,
             "report": self.report,
+            "current_stage": self.current_stage,
+            "current_file": self.current_file,
         }
         if self.error is not None:
             payload["error"] = self.error
@@ -65,6 +70,8 @@ class _ExecutionRecord:
     total: int = 0
     report: str | None = None
     error: str | None = None
+    current_stage: str = ""
+    current_file: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
 
@@ -79,6 +86,8 @@ class _ExecutionRecord:
             report=self.report,
             error=self.error,
             namespaces=self.namespaces,
+            current_stage=self.current_stage,
+            current_file=self.current_file,
         )
 
 
@@ -128,6 +137,8 @@ class ExecutionStore:
         total: int | None = None,
         report: str | None = None,
         error: str | None = None,
+        current_stage: str | None = None,
+        current_file: str | None = None,
         allow_complete: bool = False,
     ) -> ExecutionSnapshot | None:
         with self._lock:
@@ -155,6 +166,10 @@ class ExecutionStore:
                 record.report = report
             if error is not None:
                 record.error = error
+            if current_stage is not None:
+                record.current_stage = current_stage
+            if current_file is not None:
+                record.current_file = current_file
             record.updated_at = datetime.now(tz=UTC)
             return record.snapshot()
 
@@ -180,6 +195,7 @@ class RunProgress:
         self._publish(
             local_pct=PCT_START,
             status=ExecutionStatus.RUNNING,
+            stage="Inicialização",
             message="Execução iniciada",
         )
 
@@ -191,12 +207,14 @@ class RunProgress:
         self._ns_index = index
         self._publish(
             local_pct=PCT_START,
+            stage="Inicialização",
             message=f"Iniciando análise do namespace {namespace}",
         )
 
     def yamls_identified(self, count: int) -> None:
         self._publish(
             local_pct=PCT_IDENTIFIED,
+            stage="Coleta de dados",
             message="YAMLs identificados",
         )
         if count >= 0 and self._total == 0:
@@ -206,7 +224,16 @@ class RunProgress:
     def yaml_read_started(self) -> None:
         self._publish(
             local_pct=PCT_READ_START,
+            stage="Coleta de dados",
             message="Leitura dos YAMLs iniciada",
+        )
+
+    def yaml_file_started(self, file_path: str) -> None:
+        self._publish(
+            local_pct=PCT_READ_START,
+            stage="Coleta de dados",
+            current_file=Path(file_path).name,
+            message="Processando arquivo",
         )
 
     def yaml_file_processed(self, processed: int, total: int) -> None:
@@ -219,11 +246,16 @@ class RunProgress:
             fraction = min(processed / total, 1.0)
             span = PCT_READ_END - PCT_READ_START
             local = PCT_READ_START + int(fraction * span)
-        self._publish(local_pct=local, message="Analisando YAMLs")
+        self._publish(
+            local_pct=local,
+            stage="Coleta de dados",
+            message="Analisando YAMLs",
+        )
 
     def yaml_read_finished(self) -> None:
         self._publish(
             local_pct=PCT_READ_END,
+            stage="Coleta de dados",
             message="Leitura dos YAMLs concluída",
         )
 
@@ -235,18 +267,21 @@ class RunProgress:
             local = PCT_READ_END + int((step / step_count) * span)
         self._publish(
             local_pct=local,
+            stage=("Análise preditiva" if label == "ML" else "Análise dos dados"),
             message=f"Analisando objetos ({label})",
         )
 
     def analysis_finished(self) -> None:
         self._publish(
             local_pct=PCT_ANALYSIS_END,
+            stage="Análise dos dados",
             message="Análise dos objetos concluída",
         )
 
     def markdown_started(self) -> None:
         self._publish(
             local_pct=PCT_MARKDOWN,
+            stage="Geração dos resultados",
             message="Geração do relatório Markdown",
         )
 
@@ -257,6 +292,7 @@ class RunProgress:
             return
         self._publish(
             local_pct=PCT_COMPLETE,
+            stage="Finalização",
             message="Relatório gerado com sucesso",
             report=report_path,
             allow_complete=False,
@@ -270,6 +306,7 @@ class RunProgress:
             self._execution_id,
             status=ExecutionStatus.COMPLETED,
             progress=PCT_COMPLETE,
+            current_stage="Finalização",
             message="Relatório gerado com sucesso",
             processed=self._processed,
             total=self._total,
@@ -296,6 +333,8 @@ class RunProgress:
         local_pct: int,
         message: str,
         status: ExecutionStatus | None = None,
+        stage: str | None = None,
+        current_file: str | None = None,
         report: str | None = None,
         allow_complete: bool = False,
     ) -> None:
@@ -304,6 +343,8 @@ class RunProgress:
             status=status,
             progress=self._global_progress(local_pct, allow_complete=allow_complete),
             message=message,
+            current_stage=stage,
+            current_file=current_file,
             processed=self._processed,
             total=self._total,
             report=report,
