@@ -124,9 +124,20 @@ Uses the same body as `POST /analysis`. Namespace validation occurs in the initi
 {
   "execution_id": "a1b2c3d4e5f6...",
   "status": "pending",
-  "progress": 0
+  "progress": 0,
+  "current_stage": "",
+  "current_file": null,
+  "phase": "",
+  "running": false,
+  "files_processed": 0,
+  "files_total": 0
 }
 ```
+
+`phase`, `running`, `files_processed`, and `files_total` are aliases of `current_stage`,
+`status`, `processed`, and `total` respectively, matching the payload shape used by the
+kubeoptix-analyzer `/analysis/status` endpoint so frontend polling code can share the
+same field names across both backends.
 
 ### `GET /api/reports/{execution_id}/status`
 
@@ -142,7 +153,13 @@ The frontend can poll every 1–2 seconds. The `progress` field is an integer `0
   "message": "Analyzing YAML files",
   "processed": 45,
   "total": 100,
-  "report": null
+  "report": null,
+  "current_stage": "Data collection",
+  "current_file": "deployment-prod.yaml",
+  "phase": "Data collection",
+  "running": true,
+  "files_processed": 45,
+  "files_total": 100
 }
 ```
 
@@ -156,7 +173,13 @@ The frontend can poll every 1–2 seconds. The `progress` field is an integer `0
   "message": "Report generated successfully",
   "processed": 100,
   "total": 100,
-  "report": "/app/data/reports/example-ns-prd.md"
+  "report": "/app/data/reports/example-ns-prd.md",
+  "current_stage": "Finalization",
+  "current_file": "deployment-prod.yaml",
+  "phase": "Finalization",
+  "running": false,
+  "files_processed": 100,
+  "files_total": 100
 }
 ```
 
@@ -171,7 +194,13 @@ The frontend can poll every 1–2 seconds. The `progress` field is an integer `0
   "processed": 40,
   "total": 60,
   "report": null,
-  "error": "error message"
+  "error": "error message",
+  "current_stage": "Data collection",
+  "current_file": "deployment-prod.yaml",
+  "phase": "Data collection",
+  "running": false,
+  "files_processed": 40,
+  "files_total": 60
 }
 ```
 
@@ -191,6 +220,9 @@ Breakpoints by namespace, over the real pipeline (without synthetic values):
 | 100% | `.md` file written |
 
 With multiple namespaces, each namespace receives an equal slice of the overall 0–100 range.
+The `current_file` field contains only the basename of the file currently being parsed,
+or `null` when no file has started. The `current_stage` field identifies the last
+published pipeline stage. On errors, the last known stage and file are retained.
 
 #### Example with `curl`
 

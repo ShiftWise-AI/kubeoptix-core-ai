@@ -93,6 +93,8 @@ def test_start_report_returns_immediately_with_pending(
     body = response.json()
     assert body["status"] == "pending"
     assert body["progress"] == 0
+    assert body["current_stage"] == ""
+    assert body["current_file"] is None
     assert body["execution_id"]
     _wait_terminal(reports_client, body["execution_id"])
 
@@ -123,6 +125,8 @@ def test_report_status_polls_until_markdown_exists(
     assert final["report"] is not None
     assert Path(final["report"]).is_file()
     assert final["report"].endswith(f"ml-{EXAMPLE_NAMESPACE}.md")
+    assert final["current_stage"] == "Finalização"
+    assert final["current_file"] is not None
 
 
 def test_delete_report_removes_markdown_and_assets(
@@ -308,3 +312,4 @@ def test_report_execution_error_sets_error_status(
     assert final["progress"] < 100
     assert final["error"]
     assert "análise" in final["message"].lower()
+    assert final["current_stage"] == "Coleta de dados"

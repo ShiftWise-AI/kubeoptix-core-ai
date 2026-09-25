@@ -86,6 +86,47 @@ def test_run_progress_reaches_100_only_on_completed() -> None:
     assert done.total == 4
 
 
+def test_run_progress_reports_stage_and_filename() -> None:
+    store = ExecutionStore()
+    snapshot = store.create(["ns"])
+    progress = RunProgress(store, snapshot.execution_id, 1)
+
+    progress.set_running()
+    progress.yaml_read_started()
+    progress.yaml_file_started("/data/ns/apps/api/deployments/deployment-prod.yaml")
+
+    current = store.get(snapshot.execution_id)
+    assert current is not None
+    assert current.current_stage == "Coleta de dados"
+    assert current.current_file == "deployment-prod.yaml"
+
+    progress.analysis_step(1, 1, "ML")
+    current = store.get(snapshot.execution_id)
+    assert current is not None
+    assert current.current_stage == "Análise preditiva"
+    assert current.current_file == "deployment-prod.yaml"
+
+
+def test_run_progress_is_isolated_between_executions() -> None:
+    store = ExecutionStore()
+    first = store.create(["first"])
+    second = store.create(["second"])
+    first_progress = RunProgress(store, first.execution_id, 1)
+    second_progress = RunProgress(store, second.execution_id, 1)
+
+    first_progress.set_running()
+    first_progress.yaml_file_started("/tmp/first.yaml")
+    second_progress.set_running()
+    second_progress.yaml_file_started("/tmp/second.yaml")
+
+    first_current = store.get(first.execution_id)
+    second_current = store.get(second.execution_id)
+    assert first_current is not None
+    assert second_current is not None
+    assert first_current.current_file == "first.yaml"
+    assert second_current.current_file == "second.yaml"
+
+
 def test_run_progress_is_monotonic() -> None:
     store = ExecutionStore()
     snapshot = store.create(["ns"])
