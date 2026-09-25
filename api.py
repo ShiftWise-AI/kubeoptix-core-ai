@@ -26,6 +26,7 @@ from kubeoptix_core_ai.api.assessment import (
     dedupe_namespaces,
 )
 from kubeoptix_core_ai.api.progress import (
+    ExecutionStatus,
     ExecutionStore,
     RunProgress,
 )
@@ -159,6 +160,11 @@ class ReportAcceptedResponse(BaseModel):
     progress: int = Field(ge=0, le=100)
     current_stage: str = ""
     current_file: str | None = None
+    # Aliases matching kubeoptix-analyzer's /analysis/status payload.
+    phase: str = ""
+    running: bool = False
+    files_processed: int = Field(ge=0, default=0)
+    files_total: int = Field(ge=0, default=0)
 
 
 class ReportStatusResponse(BaseModel):
@@ -174,6 +180,11 @@ class ReportStatusResponse(BaseModel):
     error: str | None = None
     current_stage: str = ""
     current_file: str | None = None
+    # Aliases matching kubeoptix-analyzer's /analysis/status payload.
+    phase: str = ""
+    running: bool = False
+    files_processed: int = Field(ge=0, default=0)
+    files_total: int = Field(ge=0, default=0)
 
 
 class DeleteReportRequest(BaseModel):
@@ -598,6 +609,10 @@ async def start_report(request: AnalysisRequest) -> ReportAcceptedResponse:
         progress=snapshot.progress,
         current_stage=snapshot.current_stage,
         current_file=snapshot.current_file,
+        phase=snapshot.current_stage,
+        running=snapshot.status in {ExecutionStatus.PENDING, ExecutionStatus.RUNNING},
+        files_processed=snapshot.processed,
+        files_total=snapshot.total,
     )
 
 
@@ -633,6 +648,10 @@ async def report_status(execution_id: str) -> ReportStatusResponse:
         error=snapshot.error,
         current_stage=snapshot.current_stage,
         current_file=snapshot.current_file,
+        phase=snapshot.current_stage,
+        running=snapshot.status in {ExecutionStatus.PENDING, ExecutionStatus.RUNNING},
+        files_processed=snapshot.processed,
+        files_total=snapshot.total,
     )
 
 

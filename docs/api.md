@@ -126,9 +126,18 @@ Uses the same body as `POST /analysis`. Namespace validation occurs in the initi
   "status": "pending",
   "progress": 0,
   "current_stage": "",
-  "current_file": null
+  "current_file": null,
+  "phase": "",
+  "running": false,
+  "files_processed": 0,
+  "files_total": 0
 }
 ```
+
+`phase`, `running`, `files_processed`, and `files_total` are aliases of `current_stage`,
+`status`, `processed`, and `total` respectively, matching the payload shape used by the
+kubeoptix-analyzer `/analysis/status` endpoint so frontend polling code can share the
+same field names across both backends.
 
 ### `GET /api/reports/{execution_id}/status`
 
@@ -146,7 +155,11 @@ The frontend can poll every 1–2 seconds. The `progress` field is an integer `0
   "total": 100,
   "report": null,
   "current_stage": "Data collection",
-  "current_file": "deployment-prod.yaml"
+  "current_file": "deployment-prod.yaml",
+  "phase": "Data collection",
+  "running": true,
+  "files_processed": 45,
+  "files_total": 100
 }
 ```
 
@@ -162,7 +175,11 @@ The frontend can poll every 1–2 seconds. The `progress` field is an integer `0
   "total": 100,
   "report": "/app/data/reports/example-ns-prd.md",
   "current_stage": "Finalization",
-  "current_file": "deployment-prod.yaml"
+  "current_file": "deployment-prod.yaml",
+  "phase": "Finalization",
+  "running": false,
+  "files_processed": 100,
+  "files_total": 100
 }
 ```
 
@@ -179,7 +196,11 @@ The frontend can poll every 1–2 seconds. The `progress` field is an integer `0
   "report": null,
   "error": "error message",
   "current_stage": "Data collection",
-  "current_file": "deployment-prod.yaml"
+  "current_file": "deployment-prod.yaml",
+  "phase": "Data collection",
+  "running": false,
+  "files_processed": 40,
+  "files_total": 60
 }
 ```
 

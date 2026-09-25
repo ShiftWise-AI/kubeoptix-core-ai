@@ -53,6 +53,13 @@ class ExecutionSnapshot:
             "report": self.report,
             "current_stage": self.current_stage,
             "current_file": self.current_file,
+            # Aliases matching kubeoptix-analyzer's /analysis/status payload so
+            # the dashboard's shared progress extractors work for both flows.
+            "phase": self.current_stage,
+            "running": self.status
+            in {ExecutionStatus.PENDING, ExecutionStatus.RUNNING},
+            "files_processed": self.processed,
+            "files_total": self.total,
         }
         if self.error is not None:
             payload["error"] = self.error
