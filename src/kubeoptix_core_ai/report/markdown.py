@@ -6,6 +6,8 @@ dos findings gerados — sem inventar métricas, rotas, logs ou eventos ausentes
 
 from __future__ import annotations
 
+import json
+import re
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -1069,6 +1071,93 @@ def _resource_configuration_suggestions(bundle: AssessmentBundle) -> str:
     return "\n".join(lines)
 
 
+def _hpa_configuration_suggestions(bundle: AssessmentBundle) -> str:
+    lines = [
+        "### HPA (Horizontal Pod Autoscaler)",
+        "",
+        "> A configuração abaixo só reproduz valores explicitamente declarados no assessment. "
+        "Snapshots pontuais não justificam novos limites de réplicas nem targets de utilização.",
+        "",
+    ]
+    workloads_with_hpa = [workload for workload in bundle.context.workloads if workload.hpa]
+    if not workloads_with_hpa:
+        lines.append(
+            "Nenhum HPA foi identificado. Os dados disponíveis não são suficientes para "
+            "justificar `minReplicas`, `maxReplicas` ou targets de métricas."
+        )
+        return "\n".join(lines)
+
+    api_versions = {
+        "Deployment": "apps/v1",
+        "StatefulSet": "apps/v1",
+        "ReplicationController": "v1",
+        "DeploymentConfig": "apps.openshift.io/v1",
+    }
+    for workload in workloads_with_hpa:
+        hpa = workload.hpa
+        assert hpa is not None
+        lines.extend([f"#### Workload: `{workload.name}`", ""])
+
+        api_version = api_versions.get(hpa.target_workload_kind or "")
+        complete_target = bool(hpa.target_workload_name and api_version)
+        valid_max = hpa.max_replicas is not None and hpa.max_replicas >= 1
+        metrics: list[tuple[str, int]] = []
+        for description in hpa.metrics:
+            match = re.fullmatch(r"(cpu|memory):(\d+)%", description)
+            if not match:
+                continue
+            resource, target = match.groups()
+            if workload.containers and all(
+                getattr(container, f"{resource}_request") is not None
+                for container in workload.containers
+            ):
+                metrics.append((resource, int(target)))
+
+        if not (complete_target and valid_max and metrics):
+            lines.append(
+                "O HPA existente não contém dados suficientes para gerar um exemplo "
+                "configurável: são necessários `maxReplicas`, um alvo suportado e pelo "
+                "menos um target percentual de CPU/memória com requests declarados. "
+                "Os campos ausentes ou não verificáveis foram omitidos."
+            )
+            lines.append("")
+            continue
+
+        lines.append(
+            "Justificativa: `maxReplicas`, o alvo, os targets percentuais e os requests "
+            "foram encontrados no assessment; nenhum valor foi inferido. `minReplicas` "
+            "só é incluído quando foi declarado."
+        )
+        lines.extend(["", "```yaml", "apiVersion: autoscaling/v2", "kind: HorizontalPodAutoscaler", "metadata:"])
+        lines.append(f"  name: {json.dumps(hpa.name)}")
+        lines.append(f"  namespace: {json.dumps(workload.namespace)}")
+        lines.extend(
+            [
+                "spec:",
+                "  scaleTargetRef:",
+                f"    apiVersion: {api_version}",
+                f"    kind: {hpa.target_workload_kind}",
+                f"    name: {json.dumps(hpa.target_workload_name)}",
+            ]
+        )
+        if hpa.min_replicas is not None and hpa.min_replicas >= 1:
+            lines.append(f"  minReplicas: {hpa.min_replicas}")
+        lines.append(f"  maxReplicas: {hpa.max_replicas}")
+        lines.append("  metrics:")
+        for resource, target in metrics:
+            lines.extend(
+                [
+                    "    - type: Resource",
+                    f"      resource:\n        name: {resource}",
+                    "        target:",
+                    "          type: Utilization",
+                    f"          averageUtilization: {target}",
+                ]
+            )
+        lines.extend(["```", ""])
+    return "\n".join(lines)
+
+
 def _workload_kinds_summary(workloads: tuple[Workload, ...]) -> str:
     counts: dict[str, int] = {}
     for wl in workloads:
@@ -2010,6 +2099,7 @@ class MarkdownReportGenerator:
         sections.append("\n### Comparativo request / limit / uso (snapshot)\n")
         sections.append(_resource_balance_table(bundle))
         sections.append(_resource_configuration_suggestions(bundle))
+        sections.append(_hpa_configuration_suggestions(bundle))
         sections.append("\n### Visualizações\n")
         sections.append(render_section_visualizations(visualizations.by_section("namespace_overview")))
 
