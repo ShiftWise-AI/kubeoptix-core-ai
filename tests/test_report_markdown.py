@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -71,14 +72,111 @@ def test_markdown_report_structure(analysis_tree: Path, tmp_path: Path) -> None:
     assert "PodMetrics" in md or "uso real" in md.lower()
     assert "Principais achados" in md
     assert "Pool de scheduling relevante" in md
+    assert "### Sugestões de configuração Kubernetes/OpenShift" in md
+    assert "| Campo | Valor no assessment |" in md
+    assert (
+        "Os valores sugeridos reproduzem apenas requests e limits declarados nos "
+        "manifests do assessment." in md
+    )
+
+
+def test_resource_configuration_suggestions_use_declared_values_only(
+    analysis_tree: Path, tmp_path: Path
+) -> None:
+    config = AnalyzerConfig(
+        workloads_base=analysis_tree,
+        worknodes_path=tmp_path / "worknodes",
+    )
+    bundle = AssessmentPipeline(config).run(EXAMPLE_NAMESPACE)
+    md = MarkdownReportGenerator().generate(bundle)
+
+    start = md.index("### Sugestões de configuração Kubernetes/OpenShift")
+    end = md.index("### Visualizações", start)
+    suggestions = md[start:end]
+
+    assert "| `resources.requests.cpu` | `350m` |" in suggestions
+    assert "| `resources.requests.memory` | `384Mi` |" in suggestions
+    assert "| `resources.limits.cpu` | `700m` |" in suggestions
+    assert "| `resources.limits.memory` | `2Gi` |" in suggestions
+    assert "    cpu: 350m" in suggestions
+    assert "    memory: 384Mi" in suggestions
+    assert "    cpu: 700m" in suggestions
+    assert "    memory: 2Gi" in suggestions
+    assert "6365928n" not in suggestions
+    assert "841428Ki" not in suggestions
+
+
+def test_resource_suggestions_mark_missing_values_without_inventing_them(
+    analysis_tree: Path, tmp_path: Path
+) -> None:
+    config = AnalyzerConfig(
+        workloads_base=analysis_tree,
+        worknodes_path=tmp_path / "worknodes",
+    )
+    bundle = AssessmentPipeline(config).run(EXAMPLE_NAMESPACE)
+    workload = bundle.context.workloads[0]
+    container = workload.containers[0].model_copy(update={"cpu_request": None})
+    workload = workload.model_copy(update={"containers": (container,)})
+    workload_bundle = bundle.context.bundle.model_copy(update={"workloads": (workload,)})
+    context = replace(bundle.context, bundle=workload_bundle)
+    bundle = replace(bundle, context=context)
+
+    md = MarkdownReportGenerator().generate(bundle)
+    start = md.index("### Sugestões de configuração Kubernetes/OpenShift")
+    end = md.index("### Visualizações", start)
+    suggestions = md[start:end]
+
+    assert "| `resources.requests.cpu` | `Não declarado no assessment` |" in suggestions
+    assert "requests:\n    memory: 384Mi" in suggestions
+    assert "    cpu: 350m" not in suggestions
 
 
 @pytest.mark.parametrize(
-    ("locale", "title", "summary", "action_plan"),
+    (
+        "locale",
+        "title",
+        "summary",
+        "action_plan",
+        "resource_heading",
+        "resource_description",
+        "resource_labels",
+        "workload_label",
+        "container_label",
+    ),
     [
-        ("en-US", "Assessment Report", "Executive summary", "Action plan"),
-        ("es-ES", "Informe de evaluación", "Resumen ejecutivo", "Plan de acción"),
-        ("it-IT", "Rapporto di valutazione", "Riepilogo esecutivo", "Piano d'azione"),
+        (
+            "en-US",
+            "Assessment Report",
+            "Executive summary",
+            "Action plan",
+            "Kubernetes/OpenShift configuration suggestions",
+            "Suggested values reproduce only requests and limits declared in the assessment manifests. Usage metrics are point-in-time snapshots and cannot be used to calculate new sizing values; undeclared fields are marked unavailable and omitted from the YAML.",
+            "| Field | Assessment value |",
+            "Workload:",
+            "Container:",
+        ),
+        (
+            "es-ES",
+            "Informe de evaluación",
+            "Resumen ejecutivo",
+            "Plan de acción",
+            "Sugerencias de configuración de Kubernetes/OpenShift",
+            "Los valores sugeridos reproducen únicamente los requests y limits declarados en los manifiestos de la evaluación. Las métricas de uso son instantáneas puntuales y no permiten calcular nuevos valores de dimensionamiento; los campos no declarados se indican como no disponibles y se omiten del YAML.",
+            "| Campo | Valor en la evaluación |",
+            "Workload:",
+            "Contenedor:",
+        ),
+        (
+            "it-IT",
+            "Rapporto di valutazione",
+            "Riepilogo esecutivo",
+            "Piano d'azione",
+            "Suggerimenti di configurazione Kubernetes/OpenShift",
+            "I valori suggeriti riproducono esclusivamente request e limit dichiarati nei manifest dell'assessment. Le metriche di utilizzo sono snapshot puntuali e non consentono di calcolare nuovi valori di dimensionamento; i campi non dichiarati sono indicati come non disponibili e omessi dal YAML.",
+            "| Campo | Valore nell'assessment |",
+            "Workload:",
+            "Container:",
+        ),
     ],
 )
 def test_markdown_report_is_fully_localized(
@@ -88,6 +186,11 @@ def test_markdown_report_is_fully_localized(
     title: str,
     summary: str,
     action_plan: str,
+    resource_heading: str,
+    resource_description: str,
+    resource_labels: str,
+    workload_label: str,
+    container_label: str,
 ) -> None:
     config = AnalyzerConfig(
         workloads_base=analysis_tree,
@@ -100,6 +203,13 @@ def test_markdown_report_is_fully_localized(
     assert f"# {title}" in md
     assert f"## 1. {summary}" in md
     assert f"## 7. {action_plan}" in md
+    assert f"### {resource_heading}" in md
+    assert resource_description in md
+    assert resource_labels in md
+    assert f"#### {workload_label}" in md
+    assert container_label in md
+    assert "Os valores sugeridos reproduzem apenas" not in md
+    assert "snapshots puntuais" not in md
     for portuguese_text in (
         "Este relatório foi produzido",
         "foi analisado com",
