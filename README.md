@@ -15,6 +15,10 @@ visualizations, recommendations, and explicit confidence levels for each item.
 - **matplotlib** — numeric and composition charts (included in dependencies)
 - **KubeDiagrams + Graphviz** — architecture diagrams (CLI `kube-diagrams`; installed in the container; see below for local development)
 
+## License
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
+
 ### Architecture diagrams
 
 The report invokes the [KubeDiagrams](https://github.com/philippemerle/KubeDiagrams) CLI (`kube-diagrams`).
