@@ -1,5 +1,7 @@
 # kubeoptix-core-ai
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch workflow and contribution process.
+
 Local OpenShift/Kubernetes workload assessment agent. It ingests YAML metadata
 collected from a cluster, normalizes workloads and related resources, applies
 deterministic rules, and optionally runs a local statistical/ML layer to flag
