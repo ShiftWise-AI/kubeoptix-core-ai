@@ -7,6 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+import yaml
 
 from kubeoptix_core_ai.config import AnalyzerConfig
 from kubeoptix_core_ai.report.finding_groups import finding_section_ids
@@ -17,6 +18,7 @@ from kubeoptix_core_ai.report.markdown import (
     write_assessment_report,
 )
 from kubeoptix_core_ai.report.pipeline import AssessmentPipeline
+from kubeoptix_core_ai.models.workload import HPASpec
 
 from tests.conftest import EXAMPLE_NAMESPACE
 
@@ -73,6 +75,7 @@ def test_markdown_report_structure(analysis_tree: Path, tmp_path: Path) -> None:
     assert "Principais achados" in md
     assert "Pool de scheduling relevante" in md
     assert "### Sugestões de configuração Kubernetes/OpenShift" in md
+    assert "### HPA (Horizontal Pod Autoscaler)" in md
     assert "| Campo | Valor no assessment |" in md
     assert (
         "Os valores sugeridos reproduzem apenas requests e limits declarados nos "
@@ -129,6 +132,63 @@ def test_resource_suggestions_mark_missing_values_without_inventing_them(
     assert "| `resources.requests.cpu` | `Não declarado no assessment` |" in suggestions
     assert "requests:\n    memory: 384Mi" in suggestions
     assert "    cpu: 350m" not in suggestions
+
+
+def test_hpa_suggestion_reproduces_only_supported_assessment_values(
+    analysis_tree: Path, tmp_path: Path
+) -> None:
+    config = AnalyzerConfig(
+        workloads_base=analysis_tree,
+        worknodes_path=tmp_path / "worknodes",
+    )
+    bundle = AssessmentPipeline(config).run(EXAMPLE_NAMESPACE)
+    workload = bundle.context.workloads[0]
+    hpa = HPASpec(
+        name="backend-hpa",
+        min_replicas=2,
+        max_replicas=6,
+        target_workload_name=workload.name,
+        target_workload_kind="Deployment",
+        metrics=["cpu:75%", "memory:80%"],
+        source=workload.source,
+    )
+    workload = workload.model_copy(update={"hpa": hpa})
+    workload_bundle = bundle.context.bundle.model_copy(update={"workloads": (workload,)})
+    bundle = replace(bundle, context=replace(bundle.context, bundle=workload_bundle))
+
+    markdown = MarkdownReportGenerator().generate(bundle)
+
+    assert "kind: HorizontalPodAutoscaler" in markdown
+    assert "apiVersion: autoscaling/v2" in markdown
+    assert "  minReplicas: 2" in markdown
+    assert "  maxReplicas: 6" in markdown
+    assert "averageUtilization: 75" in markdown
+    assert "averageUtilization: 80" in markdown
+    assert "Justificativa:" in markdown
+    hpa_yaml = markdown.split("### HPA (Horizontal Pod Autoscaler)", 1)[1]
+    hpa_yaml = hpa_yaml.split("```yaml\n", 1)[1].split("\n```", 1)[0]
+    manifest = yaml.safe_load(hpa_yaml)
+    assert manifest["apiVersion"] == "autoscaling/v2"
+    assert manifest["kind"] == "HorizontalPodAutoscaler"
+    assert manifest["spec"]["scaleTargetRef"]["kind"] == "Deployment"
+    assert manifest["spec"]["metrics"][0]["resource"]["name"] == "cpu"
+
+
+def test_hpa_without_evidence_does_not_invent_configuration(
+    analysis_tree: Path, tmp_path: Path
+) -> None:
+    config = AnalyzerConfig(
+        workloads_base=analysis_tree,
+        worknodes_path=tmp_path / "worknodes",
+    )
+    bundle = AssessmentPipeline(config).run(EXAMPLE_NAMESPACE)
+
+    markdown = MarkdownReportGenerator().generate(bundle)
+
+    assert "Nenhum HPA foi identificado." in markdown
+    assert "kind: HorizontalPodAutoscaler" not in markdown
+    assert "minReplicas: 1" not in markdown
+    assert "maxReplicas: 3" not in markdown
 
 
 @pytest.mark.parametrize(
@@ -208,6 +268,8 @@ def test_markdown_report_is_fully_localized(
     assert resource_labels in md
     assert f"#### {workload_label}" in md
     assert container_label in md
+    assert "### HPA (Horizontal Pod Autoscaler)" in md
+    assert "Nenhum HPA foi identificado." not in md
     assert "Os valores sugeridos reproduzem apenas" not in md
     assert "snapshots puntuais" not in md
     for portuguese_text in (
