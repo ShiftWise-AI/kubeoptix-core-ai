@@ -1,0 +1,41 @@
+name: Validate Branch Flow
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+jobs:
+  check-flow:
+    runs-on: fedora-latest
+    container:
+      image: registry.fedoraproject.org/fedora:latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Validate PR Source and Target
+        run: |
+          TARGET="${{ github.base_ref }}"
+          SOURCE="${{ github.head_ref }}"
+          
+          echo "Merge attempt: from '$SOURCE' to '$TARGET'"
+
+          # 1. Stage only accepts merges from develop (or a hotfix/*)
+          if [ "$TARGET" = "stage" ] && [ "$SOURCE" != "develop" ] && [[ ! "$SOURCE" =~ ^hotfix/ ]]; then
+            echo "ERROR: The 'stage' branch only accepts merges from 'develop' or a 'hotfix/*'."
+            exit 1
+          fi
+
+          # 2. Main only accepts merges from stage (or a hotfix/*)
+          if [ "$TARGET" = "main" ] && [ "$SOURCE" != "stage" ] && [[ ! "$SOURCE" =~ ^hotfix/ ]]; then
+            echo "ERROR: The 'main' branch only accepts merges from 'stage' or a 'hotfix/*'."
+            exit 1
+          fi
+
+          # 3. Features may only be merged into develop
+          # Note: GitHub only knows the base branch while it still matches develop.
+          # We check whether a feature/* branch is targeting the wrong branch.
+          if [[ "$SOURCE" =~ ^feature/ ]] && [ "$TARGET" != "develop" ]; then
+            echo "ERROR: 'feature/*' branches can only be merged into 'develop'."
+            exit 1
+          fi
