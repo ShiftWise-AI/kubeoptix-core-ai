@@ -1002,6 +1002,73 @@ def _resource_balance_table(bundle: AssessmentBundle) -> str:
     )
 
 
+def _resource_configuration_suggestions(bundle: AssessmentBundle) -> str:
+    """Render declared resource values without inferring new sizing targets."""
+    lines = [
+        "### Sugestões de configuração Kubernetes/OpenShift",
+        "",
+        "> Os valores sugeridos reproduzem apenas requests e limits declarados nos "
+        "manifests do assessment. Métricas de uso são snapshots pontuais e não "
+        "permitem calcular novos valores de sizing; campos não declarados são "
+        "indicados como indisponíveis e omitidos do YAML.",
+        "",
+    ]
+    workloads = bundle.context.workloads
+    if not any(workload.containers for workload in workloads):
+        lines.append("Nenhum workload/container com dados de recursos foi encontrado no assessment.")
+        return "\n".join(lines)
+
+    fields = (
+        ("requests", "cpu", "resources.requests.cpu"),
+        ("requests", "memory", "resources.requests.memory"),
+        ("limits", "cpu", "resources.limits.cpu"),
+        ("limits", "memory", "resources.limits.memory"),
+    )
+    for workload in workloads:
+        for container in workload.containers:
+            values = {
+                "requests": {
+                    "cpu": container.cpu_request,
+                    "memory": container.memory_request,
+                },
+                "limits": {
+                    "cpu": container.cpu_limit,
+                    "memory": container.memory_limit,
+                },
+            }
+            lines.extend(
+                [
+                    f"#### Workload: `{workload.name}` | Container: `{container.name}`",
+                    "",
+                    "| Campo | Valor no assessment |",
+                    "| --- | --- |",
+                ]
+            )
+            for section, resource, field_name in fields:
+                quantity = values[section][resource]
+                display = quantity.raw if quantity is not None else "Não declarado no assessment"
+                lines.append(f"| `{field_name}` | `{display}` |")
+
+            lines.extend(["", "```yaml"])
+            configured_sections = [
+                section
+                for section in ("requests", "limits")
+                if any(values[section].values())
+            ]
+            if not configured_sections:
+                lines.append("resources: {}")
+            else:
+                lines.append("resources:")
+                for section in configured_sections:
+                    lines.append(f"  {section}:")
+                    for resource in ("cpu", "memory"):
+                        quantity = values[section][resource]
+                        if quantity is not None:
+                            lines.append(f"    {resource}: {quantity.raw}")
+            lines.extend(["```", ""])
+    return "\n".join(lines)
+
+
 def _workload_kinds_summary(workloads: tuple[Workload, ...]) -> str:
     counts: dict[str, int] = {}
     for wl in workloads:
@@ -1942,6 +2009,7 @@ class MarkdownReportGenerator:
         sections.append(_namespace_totals_table(bundle))
         sections.append("\n### Comparativo request / limit / uso (snapshot)\n")
         sections.append(_resource_balance_table(bundle))
+        sections.append(_resource_configuration_suggestions(bundle))
         sections.append("\n### Visualizações\n")
         sections.append(render_section_visualizations(visualizations.by_section("namespace_overview")))
 
