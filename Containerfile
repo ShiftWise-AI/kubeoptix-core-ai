@@ -20,11 +20,11 @@ ENV KUBEOPTIX_UID=1001 \
 
 ENV PATH=/app/.venv/bin:$PATH
 
-RUN dnf install -y \
+RUN dnf update -y \
+    && dnf install -y \
     python3 \
     python3-pip \
     graphviz \
-    && dnf update -y \
     && dnf clean all \
     && groupadd -g "$KUBEOPTIX_UID" kubeoptix \
     && useradd -u "$KUBEOPTIX_UID" -g kubeoptix -m -s /bin/bash kubeoptix \
