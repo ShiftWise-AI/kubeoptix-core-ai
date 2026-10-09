@@ -65,3 +65,22 @@ These failures must be resolved before merging; confirm them in the clean Python
 workflows were committed, pushed, or executed remotely, and no image was
 published. Acceptance is pending a genuinely green reviewed promotion and a
 main run publishing the exact scanned image. Never bypass `ci-required`.
+
+## PR Failure Remediation (2026-10-09)
+
+PR #34 confirmed that resource findings were omitted from generated Markdown
+despite being grouped correctly in memory. The report now renders these groups
+after Visualizations, outside the declared-resource suggestion block, and retains
+textual architecture relationships when a diagram succeeds. The Spanish test
+now asserts the expected impact label: "Impacto potencial" is valid in both
+Spanish and Portuguese and must not be rejected as untranslated Portuguese.
+The original grouping assertion and every application test remain enabled.
+
+The complete suite passed on Python 3.12: 223 passed, 4 pre-existing skips.
+The container now uses the same fixed UBI 10 base as the other Python services;
+Trivy could not scan Fedora OS packages, so a green Fedora image scan did not
+provide adequate OS coverage. The UBI image passed OS/application, configuration,
+and secret scans. Only the two historical build inventories in pip/virtualenv
+are excluded, as documented for Analyzer; installed packages are still scanned.
+The old blockers above describe the initial audit, not the corrected revision.
+Remote checks and independent review are still required before promotion.

@@ -120,6 +120,7 @@ jobs:
         with:
           version: v0.69.3
           image-ref: quay.io/parraes/kubeoptix-core-ai:sha-${{ github.sha }}
+          skip-files: '**/pip/_vendor/bom.cdx.json,**/virtualenv-*.dist-info/sboms/virtualenv.cdx.json'
           scanners: vuln,secret
           severity: HIGH,CRITICAL
           exit-code: '1'

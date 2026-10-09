@@ -1,4 +1,4 @@
-FROM registry.fedoraproject.org/fedora:latest
+FROM registry.access.redhat.com/ubi10:1785332448
 
 USER 0
 
