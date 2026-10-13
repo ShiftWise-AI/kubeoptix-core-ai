@@ -272,6 +272,12 @@ def test_markdown_report_is_fully_localized(
     assert "Nenhum HPA foi identificado." not in md
     assert "Os valores sugeridos reproduzem apenas" not in md
     assert "snapshots puntuais" not in md
+    impact_labels = {
+        "en-US": "Potential impact",
+        "es-ES": "Impacto potencial",
+        "it-IT": "Impatto potenziale",
+    }
+    assert f"**{impact_labels[locale]}:**" in md
     for portuguese_text in (
         "Este relatório foi produzido",
         "foi analisado com",
@@ -281,7 +287,6 @@ def test_markdown_report_is_fully_localized(
         "Uso real é",
         "**Evidências:**",
         "**Análise:**",
-        "**Impacto potencial:**",
         "**Recomendação:**",
         "| Prioridade | Ação |",
         "Fontes consultadas para fundamentar",

@@ -25,3 +25,11 @@ def system_locale_for_report_tests(monkeypatch: pytest.MonkeyPatch) -> None:
         "kubeoptix_core_ai.report.markdown.resolve_system_locale",
         lambda: "pt-BR",
     )
+
+
+@pytest.fixture(autouse=True)
+def disable_external_kubediagrams(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "kubeoptix_core_ai.visualization.kubediagrams.renderer.is_kubediagrams_available",
+        lambda: False,
+    )
