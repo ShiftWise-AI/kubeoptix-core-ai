@@ -887,6 +887,7 @@ def _namespace_architecture_section(
         manifests=manifests,
         yaml_sources=yaml_sources,
     )
+    lines.append(_render_architecture_text_fallback(bundle))
     return "\n".join(lines)
 
 
@@ -2102,6 +2103,22 @@ class MarkdownReportGenerator:
         sections.append(_hpa_configuration_suggestions(bundle))
         sections.append("\n### Visualizações\n")
         sections.append(render_section_visualizations(visualizations.by_section("namespace_overview")))
+        resource_findings = tuple(
+            finding
+            for finding in report.findings
+            if finding.category not in (
+                *_SECTION_CATEGORIES["inventory"],
+                *_SECTION_CATEGORIES["architecture"],
+                *_SECTION_CATEGORIES["events"],
+            )
+        )
+        if resource_findings:
+            sections.append(
+                _section_findings(
+                    resource_findings,
+                    "Principais achados",
+                )
+            )
 
         sections.extend(["", "---", "", "## 5. Observabilidade (métricas, logs, monitoramento)", ""])
         sections.append(_events_summary_table(ctx.events))
