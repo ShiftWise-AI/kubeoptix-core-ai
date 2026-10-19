@@ -6,8 +6,8 @@ import json
 import os
 import re
 from collections.abc import Mapping
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+
+import httpx
 
 from kubeoptix_core_ai.errors import ConfigurationError
 
@@ -655,19 +655,20 @@ def _system_settings_endpoint(url: str | None = None) -> str:
 def resolve_system_locale(*, url: str | None = None, timeout: float = 5.0) -> str:
     """Read and validate the report locale from the system-settings service."""
     endpoint = _system_settings_endpoint(url)
-    request = Request(endpoint, headers={"Accept": "application/json"})
     try:
-        with urlopen(request, timeout=timeout) as response:
-            payload = json.load(response)
-    except HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace").strip()
+        with httpx.Client(follow_redirects=True, timeout=timeout) as client:
+            response = client.get(endpoint, headers={"Accept": "application/json"})
+            response.raise_for_status()
+            payload = response.json()
+    except httpx.HTTPStatusError as exc:
+        body = exc.response.content.decode("utf-8", errors="replace").strip()
         detail = f": {body}" if body else ""
         raise ConfigurationError(
-            f"Falha ao consultar {endpoint} (HTTP {exc.code}){detail}"
+            f"Falha ao consultar {endpoint} (HTTP {exc.response.status_code}){detail}"
         ) from exc
-    except URLError as exc:
+    except (httpx.RequestError, httpx.InvalidURL) as exc:
         raise ConfigurationError(
-            f"Não foi possível acessar {endpoint}: {exc.reason}"
+            f"Não foi possível acessar {endpoint}: {exc}"
         ) from exc
     except (OSError, TimeoutError, json.JSONDecodeError) as exc:
         raise ConfigurationError(

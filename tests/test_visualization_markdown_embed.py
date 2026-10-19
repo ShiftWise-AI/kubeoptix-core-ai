@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from kubeoptix_core_ai.visualization.chart_theme import build_chart_id, chart_container_open
 from kubeoptix_core_ai.visualization.markdown import (
     _markdown_architecture_image,
     _markdown_image,
@@ -13,6 +14,22 @@ from kubeoptix_core_ai.visualization.markdown import (
 
 def test_markdown_image_uses_relative_prefix() -> None:
     assert _markdown_image("CPU", "ns_assets/cpu.png") == "![CPU](./ns_assets/cpu.png)"
+
+
+def test_chart_ids_remain_deterministic_and_content_specific() -> None:
+    chart_id = build_chart_id("bar", "CPU usage", "namespace-a")
+    assert chart_id == build_chart_id("bar", "CPU usage", "namespace-a")
+    assert chart_id.startswith("kubeoptix-bar-cpu-usage-")
+    assert len(chart_id.rsplit("-", 1)[1]) == 8
+    assert chart_id != build_chart_id("bar", "CPU usage", "namespace-b")
+    assert chart_id != build_chart_id("bar", "Memory usage", "namespace-a")
+
+
+def test_chart_container_and_css_reference_the_same_id() -> None:
+    chart_id = build_chart_id("bar", "CPU usage", "namespace-a")
+    rendered = chart_container_open(chart_id, "chart", "CPU usage", segment_class="segment")
+    assert f'id="{chart_id}"' in rendered
+    assert f"#{chart_id} .segment:hover" in rendered
 
 
 def test_markdown_architecture_image_uses_full_page_width() -> None:
