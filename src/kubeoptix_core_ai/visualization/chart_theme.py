@@ -62,7 +62,7 @@ def truncate_chart_label(label: str, max_len: int) -> str:
 def build_chart_id(prefix: str, title: str, fingerprint: str) -> str:
     slug = "".join(ch if ch.isalnum() else "-" for ch in title.lower())
     slug = slug.strip("-") or "chart"
-    digest = hashlib.sha1(f"{title}|{fingerprint}".encode()).hexdigest()[:8]
+    digest = hashlib.sha256(f"{title}|{fingerprint}".encode()).hexdigest()[:8]
     return f"kubeoptix-{prefix}-{slug}-{digest}"
 
 

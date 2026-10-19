@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import io
-import json
-from urllib.error import HTTPError
-from urllib.request import Request
+from collections.abc import Callable
 
+import httpx
 import pytest
 
 from kubeoptix_core_ai.errors import ConfigurationError
@@ -76,33 +74,45 @@ def test_validate_locale_rejects_missing_empty_and_unsupported_values(
         i18n.validate_locale(language)
 
 
-def test_resolve_system_locale_reads_language(monkeypatch: pytest.MonkeyPatch) -> None:
-    response = io.BytesIO(json.dumps({"language": "it-IT"}).encode())
+@pytest.fixture
+def settings_http(monkeypatch: pytest.MonkeyPatch):
+    real_client = httpx.Client
+
+    def configure(handler: Callable[[httpx.Request], httpx.Response]) -> None:
+        monkeypatch.setattr(
+            i18n.httpx,
+            "Client",
+            lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs),
+        )
+
+    return configure
+
+
+def test_resolve_system_locale_reads_language(settings_http) -> None:
     requested_urls: list[str] = []
 
-    def respond(request: Request, timeout: float) -> io.BytesIO:
-        del timeout
-        requested_urls.append(request.full_url)
-        return response
+    def respond(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        assert request.headers["Accept"] == "application/json"
+        assert request.extensions["timeout"]["read"] == 5.0
+        return httpx.Response(200, json={"language": "it-IT"})
 
-    monkeypatch.setattr(i18n, "urlopen", respond)
+    settings_http(respond)
 
     assert i18n.resolve_system_locale(url="http://configurations-api:8000") == "it-IT"
     assert requested_urls == ["http://configurations-api:8000/system-settings"]
 
 
 def test_resolve_system_locale_accepts_full_endpoint(
-    monkeypatch: pytest.MonkeyPatch,
+    settings_http,
 ) -> None:
-    response = io.BytesIO(b'{"language":"en-US"}')
     requested_urls: list[str] = []
 
-    def respond(request: Request, timeout: float) -> io.BytesIO:
-        del timeout
-        requested_urls.append(request.full_url)
-        return response
+    def respond(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        return httpx.Response(200, json={"language": "en-US"})
 
-    monkeypatch.setattr(i18n, "urlopen", respond)
+    settings_http(respond)
 
     assert (
         i18n.resolve_system_locale(
@@ -114,53 +124,67 @@ def test_resolve_system_locale_accepts_full_endpoint(
 
 
 def test_resolve_system_locale_rejects_missing_language(
-    monkeypatch: pytest.MonkeyPatch,
+    settings_http,
 ) -> None:
-    response = io.BytesIO(b"{}")
-
-    def respond(_request: object, timeout: float) -> io.BytesIO:
-        del _request
-        del timeout
-        return response
-
-    monkeypatch.setattr(i18n, "urlopen", respond)
+    settings_http(lambda request: httpx.Response(200, json={}))
 
     with pytest.raises(ConfigurationError, match="Locale não suportado"):
         i18n.resolve_system_locale()
 
 
 def test_resolve_system_locale_surfaces_api_unavailability(
-    monkeypatch: pytest.MonkeyPatch,
+    settings_http,
 ) -> None:
-    def unavailable(_request: object, timeout: float) -> object:
-        del _request
-        del timeout
+    def unavailable(request: httpx.Request) -> httpx.Response:
         raise OSError("connection refused")
 
-    monkeypatch.setattr(i18n, "urlopen", unavailable)
+    settings_http(unavailable)
 
     with pytest.raises(ConfigurationError, match="Não foi possível consultar"):
         i18n.resolve_system_locale()
 
 
 def test_resolve_system_locale_surfaces_http_status_and_body(
-    monkeypatch: pytest.MonkeyPatch,
+    settings_http,
 ) -> None:
-    def failed(_request: object, timeout: float) -> object:
-        del _request
-        del timeout
-        raise HTTPError(
-            "http://configurations-api:8000/system-settings",
-            503,
-            "Service Unavailable",
-            {},
-            io.BytesIO(b'{"message":"database unavailable"}'),
-        )
-
-    monkeypatch.setattr(i18n, "urlopen", failed)
+    settings_http(
+        lambda request: httpx.Response(503, json={"message": "database unavailable"})
+    )
 
     with pytest.raises(
         ConfigurationError,
         match=r"HTTP 503.*database unavailable",
     ):
         i18n.resolve_system_locale()
+
+
+def test_resolve_system_locale_follows_http_redirects(settings_http) -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/system-settings":
+            return httpx.Response(302, headers={"Location": "/settings"})
+        return httpx.Response(200, json={"language": "es-ES"})
+
+    settings_http(respond)
+    assert i18n.resolve_system_locale() == "es-ES"
+
+
+@pytest.mark.parametrize("payload", [b"not-json", b"[]"])
+def test_resolve_system_locale_rejects_invalid_response(settings_http, payload: bytes) -> None:
+    settings_http(lambda request: httpx.Response(200, content=payload))
+    with pytest.raises(ConfigurationError):
+        i18n.resolve_system_locale()
+
+
+@pytest.mark.parametrize("error_type", [httpx.ConnectError, httpx.ReadTimeout])
+def test_resolve_system_locale_wraps_transport_errors(settings_http, error_type) -> None:
+    def unavailable(request: httpx.Request) -> httpx.Response:
+        raise error_type("service unavailable", request=request)
+
+    settings_http(unavailable)
+    with pytest.raises(ConfigurationError, match="Não foi possível acessar"):
+        i18n.resolve_system_locale()
+
+
+def test_resolve_system_locale_rejects_file_urls() -> None:
+    with pytest.raises(ConfigurationError):
+        i18n.resolve_system_locale(url="file:///etc/passwd")
